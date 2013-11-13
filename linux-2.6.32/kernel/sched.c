@@ -5724,7 +5724,7 @@ need_resched:
 	prev = rq->curr;
 	switch_count = &prev->nivcsw;
 
-	release_kernel_lock(prev);
+	release_kernel_lock(prev);	// 保证prev不占用大内核锁
 need_resched_nonpreemptible:
 
 	schedule_debug(prev);
@@ -5744,10 +5744,10 @@ need_resched_nonpreemptible:
 		switch_count = &prev->nvcsw;
 	}
 
-	pre_schedule(rq, prev);
+	pre_schedule(rq, prev);	// 调用sche_class 的pre_schedule
 
 	if (unlikely(!rq->nr_running))
-		idle_balance(cpu, rq);
+		idle_balance(cpu, rq);	// attempts to pull task from other cpus
 
 	put_prev_task(rq, prev);
 	next = pick_next_task(rq);
