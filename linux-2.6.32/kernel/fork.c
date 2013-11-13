@@ -87,6 +87,7 @@ DEFINE_PER_CPU(unsigned long, process_counts) = 0;
 
 __cacheline_aligned DEFINE_RWLOCK(tasklist_lock);  /* outer */
 
+// 进程total num
 int nr_processes(void)
 {
 	int cpu;
