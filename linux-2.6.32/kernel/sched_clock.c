@@ -177,7 +177,7 @@ u64 sched_clock_cpu(int cpu)
 	WARN_ON_ONCE(!irqs_disabled());
 
 	if (sched_clock_stable)
-		return sched_clock();
+		return sched_clock();	// 读取的是TSC值
 
 	if (unlikely(!sched_clock_running))
 		return 0ull;

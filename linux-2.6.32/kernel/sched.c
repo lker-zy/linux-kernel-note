@@ -5671,6 +5671,8 @@ static void put_prev_task(struct rq *rq, struct task_struct *p)
 	} else {
 		update_avg(&p->se.avg_running, 0);
 	}
+	// 对fair_sched_class而言，更新curr统计，将prev重回cfs的rb_tree
+	// 然后置cfs的curr为NULL
 	p->sched_class->put_prev_task(rq, p);
 }
 
@@ -5693,6 +5695,7 @@ pick_next_task(struct rq *rq)
 			return p;
 	}
 
+	// 保证从rt调度队列里面先选择，保证了rt进程的优先权
 	class = sched_class_highest;
 	for ( ; ; ) {
 		p = class->pick_next_task(rq);
@@ -5745,21 +5748,24 @@ need_resched_nonpreemptible:
 	}
 
 	pre_schedule(rq, prev);	// 调用sche_class 的pre_schedule
+							// fair_sched_class未实现该回调
 
 	if (unlikely(!rq->nr_running))
 		idle_balance(cpu, rq);	// attempts to pull task from other cpus
 
 	put_prev_task(rq, prev);
-	next = pick_next_task(rq);
+	next = pick_next_task(rq);	// 选择下一个最合适运行的进程
+								// 内部保证了rt进程优先
 
 	if (likely(prev != next)) {
-		sched_info_switch(prev, next);
+		sched_info_switch(prev, next);	// sched_info统计相关
 		perf_event_task_sched_out(prev, next, cpu);
 
 		rq->nr_switches++;
 		rq->curr = next;
 		++*switch_count;
 
+		// 建立next的地址空间
 		context_switch(rq, prev, next); /* unlocks the rq */
 		/*
 		 * the context switch might have flipped the stack from under

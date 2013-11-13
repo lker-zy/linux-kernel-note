@@ -266,7 +266,7 @@ __sched_info_switch(struct task_struct *prev, struct task_struct *next)
 static inline void
 sched_info_switch(struct task_struct *prev, struct task_struct *next)
 {
-	if (unlikely(sched_info_on()))
+	if (unlikely(sched_info_on()))	// sched_info开关
 		__sched_info_switch(prev, next);
 }
 #else
