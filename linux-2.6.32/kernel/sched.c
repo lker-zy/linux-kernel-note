@@ -2934,8 +2934,9 @@ static void finish_task_switch(struct rq *rq, struct task_struct *prev)
 	finish_lock_switch(rq, prev);
 
 	fire_sched_in_preempt_notifiers(current);
+	// attention: rq->prev_mm = prev->active_mm; mm = rq->prev_mm;
 	if (mm)
-		mmdrop(mm);
+		mmdrop(mm);	// dec reference for prev->active_mm
 	if (unlikely(prev_state == TASK_DEAD)) {
 		/*
 		 * Remove function-return probe instances associated with this
@@ -3019,8 +3020,8 @@ context_switch(struct rq *rq, struct task_struct *prev,
 
 	prepare_task_switch(rq, prev, next);
 	trace_sched_switch(rq, prev, next);
-	mm = next->mm;
-	oldmm = prev->active_mm;
+	mm = next->mm;	// 内核线程的mm字段为NULL
+	oldmm = prev->active_mm;	// active_mm为所使用的mm
 	/*
 	 * For paravirt, this is coupled with an exit in switch_to to
 	 * combine the page table reload and the switch backend into
@@ -3028,14 +3029,13 @@ context_switch(struct rq *rq, struct task_struct *prev,
 	 */
 	arch_start_context_switch(prev);
 
-	if (unlikely(!mm)) {
-		next->active_mm = oldmm;
+	if (unlikely(!mm)) {	// 内核线程
+		next->active_mm = oldmm;	// 使用prev的内存描述符
 		atomic_inc(&oldmm->mm_count);
-		enter_lazy_tlb(oldmm, next);
+		enter_lazy_tlb(oldmm, next);	// 设置懒惰TLB模式
 	} else
-		switch_mm(oldmm, mm, next);
-
-	if (unlikely(!prev->mm)) {
+		switch_mm(oldmm, mm, next);	// 替换地址空间
+	if (unlikely(!prev->mm)) {	// 说明prev是内核线程，或者prev正在退出
 		prev->active_mm = NULL;
 		rq->prev_mm = oldmm;
 	}
@@ -3050,7 +3050,19 @@ context_switch(struct rq *rq, struct task_struct *prev,
 #endif
 
 	/* Here we just switch the register state and the stack. */
-	switch_to(prev, next, prev);
+	switch_to(prev, next, prev);	// 操作CR3寄存器
+	/************************************************/
+	/*执行到这儿，就已经开始运行next进程的逻辑了*****/
+	/*而这个下面的代码已经不再是由next进行执行了*****/
+	/*而是当prev再次被调度时执行                *****/
+	/*而上面说的开始执行next的逻辑，虽然也是这段代码*/
+	/*但是是接着上次被换出时候被执行                */
+	/************************************************/
+
+	/*
+	 *	到这儿，prev代表的是上面的prev进程被重新调度时候
+	 *	被替换出去的那个进程
+	 */
 
 	barrier();
 	/*
@@ -5728,6 +5740,7 @@ need_resched:
 	switch_count = &prev->nivcsw;
 
 	release_kernel_lock(prev);	// 保证prev不占用大内核锁
+								// 这个版本貌似已经不使用大内核锁了
 need_resched_nonpreemptible:
 
 	schedule_debug(prev);
