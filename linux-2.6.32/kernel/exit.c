@@ -255,12 +255,14 @@ static int will_become_orphaned_pgrp(struct pid *pgrp, struct task_struct *ignor
 {
 	struct task_struct *p;
 
+	//遍历pgrp组里的所有线程
 	do_each_pid_task(pgrp, PIDTYPE_PGID, p) {
 		if ((p == ignored_task) ||
 		    (p->exit_state && thread_group_empty(p)) ||
 		    is_global_init(p->real_parent))
 			continue;
 
+		// 父子不属于同一个进程组 属于同一个会话，不会成孤儿
 		if (task_pgrp(p->real_parent) != pgrp &&
 		    task_session(p->real_parent) == task_session(p))
 			return 0;
@@ -299,9 +301,11 @@ static int has_stopped_jobs(struct pid *pgrp)
  * a result of our exiting, and if they have any stopped jobs,
  * send them a SIGHUP and then a SIGCONT. (POSIX 3.2.2.2)
  */
+// parent是那个将死的进程
 static void
 kill_orphaned_pgrp(struct task_struct *tsk, struct task_struct *parent)
 {
+	// 线程组领头进程的组ID
 	struct pid *pgrp = task_pgrp(tsk);
 	struct task_struct *ignored_task = tsk;
 
@@ -316,8 +320,9 @@ kill_orphaned_pgrp(struct task_struct *tsk, struct task_struct *parent)
 		 */
 		ignored_task = NULL;
 
-	if (task_pgrp(parent) != pgrp &&
-	    task_session(parent) == task_session(tsk) &&
+	if (task_pgrp(parent) != pgrp &&	// 父子进程不在同一个进程组
+	    task_session(parent) == task_session(tsk) &&	// 父子在同一个会话
+		/* 判断是否产生孤儿进程组*/
 	    will_become_orphaned_pgrp(pgrp, ignored_task) &&
 	    has_stopped_jobs(pgrp)) {
 		__kill_pgrp_info(SIGHUP, SEND_SIG_PRIV, pgrp);
@@ -707,8 +712,10 @@ static void exit_mm(struct task_struct * tsk)
  * the child reaper process (ie "init") in our pid
  * space.
  */
+// father是将死进程
 static struct task_struct *find_new_reaper(struct task_struct *father)
 {
+	// 所属pid命名空间
 	struct pid_namespace *pid_ns = task_active_pid_ns(father);
 	struct task_struct *thread;
 
@@ -717,22 +724,32 @@ static struct task_struct *find_new_reaper(struct task_struct *father)
 		if (thread->flags & PF_EXITING)
 			continue;
 		if (unlikely(pid_ns->child_reaper == father))
+			// child_reaper指向的进程作用相当于全局命名空间的init进程
+			// 其中一个目的是对孤儿进程进行回收
+			// 很奇怪这个判断为什么不放到循环之前去做呢
 			pid_ns->child_reaper = thread;
 		return thread;
+		// 如果线程组中，有那么一个线程： 不处于PF_EXITING状态，那新的father就是它了
+		// 同时，if将死的进程是child_reaper,那么，将这个新的father作为child_reaper
 	}
 
+	// 如果当前线程组中所有线程都不符合条件，goon
 	if (unlikely(pid_ns->child_reaper == father)) {
 		write_unlock_irq(&tasklist_lock);
 		if (unlikely(pid_ns == &init_pid_ns))
+		// 说明要结束的进程是在init_pid_ns中
+		// 而init_pid_ns的child_reaper进程是init进程
+		// 就是说要结束的是init进程，当然要panic了
 			panic("Attempted to kill init!");
 
-		zap_pid_ns_processes(pid_ns);
+		zap_pid_ns_processes(pid_ns);	// 干掉线程组里面的所有线程
 		write_lock_irq(&tasklist_lock);
 		/*
 		 * We can not clear ->child_reaper or leave it alone.
 		 * There may by stealth EXIT_DEAD tasks on ->children,
 		 * forget_original_parent() must move them somewhere.
 		 */
+		// 过继给init进程(global)
 		pid_ns->child_reaper = init_pid_ns.child_reaper;
 	}
 
@@ -756,6 +773,7 @@ static void reparent_thread(struct task_struct *father, struct task_struct *p,
 	 * If this is a threaded reparent there is no need to
 	 * notify anyone anything has happened.
 	 */
+	// 新的父进程和原父进程在同一个线程组
 	if (same_thread_group(p->real_parent, father))
 		return;
 
@@ -763,6 +781,9 @@ static void reparent_thread(struct task_struct *father, struct task_struct *p,
 	p->exit_signal = SIGCHLD;
 
 	/* If it has exited notify the new parent about this child's death. */
+	// 什么情况下会出这种状态呢?
+	// 进程p已经exit，但是原父进程并未wait调用也没有忽略SIGCHLD信号
+	// 然后，原父进程死亡，新的父进程会收到p进程exit的通知
 	if (!task_ptrace(p) &&
 	    p->exit_state == EXIT_ZOMBIE && thread_group_empty(p)) {
 		do_notify_parent(p, p->exit_signal);
@@ -785,9 +806,35 @@ static void forget_original_parent(struct task_struct *father)
 	write_lock_irq(&tasklist_lock);
 	reaper = find_new_reaper(father);
 
+/*
+#define list_for_each_entry_safe(pos, n, head, member)			\
+	for (pos = list_entry((head)->next, typeof(*pos), member),	\
+		n = list_entry(pos->member.next, typeof(*pos), member);	\
+	     &pos->member != (head); 					\
+	     pos = n, n = list_entry(n->member.next, typeof(*n), member))
+*/
+/**
+ * list_entry - get the struct for this entry
+ * @ptr:	the &struct list_head pointer.
+ * @type:	the type of the struct this is embedded in.
+ * @member:	the name of the list_struct within the struct.
+ *
+ *
+ *	#define list_entry(ptr, type, member) \
+ *		container_of(ptr, type, member)
+ */
+
+/**
+ * 第一次调用的时候，head表示子进程链表children域的地址,->children作为表头，children->next才是第一个子进程 
+ * @pos:list_entry获取下一个结构的地址赋值给pos, struct task_struct（第一个子进程）?
+ * @n :再被赋值为该子进程的下一个兄弟进程的struct task_struct的地址
+ */
+
 	list_for_each_entry_safe(p, n, &father->children, sibling) {
+		// 遍历其所有children
 		p->real_parent = reaper;
 		if (p->parent == father) {
+			// 如果task_ptrace(p)为真，p->parent == father不应该成立
 			BUG_ON(task_ptrace(p));
 			p->parent = p->real_parent;
 		}
