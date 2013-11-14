@@ -485,6 +485,7 @@ static inline int tracehook_get_signal(struct task_struct *task,
  */
 static inline int tracehook_notify_jctl(int notify, int why)
 {
+	// notify ?: ret 的意思： notify 为 真，则返回notify，否则返回ret值
 	return notify ?: (current->ptrace & PT_PTRACED) ? why : 0;
 }
 

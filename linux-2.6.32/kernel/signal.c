@@ -1945,6 +1945,7 @@ void exit_signals(struct task_struct *tsk)
 	int group_stop = 0;
 	struct task_struct *t;
 
+	// 线程组exiting，直接返回
 	if (thread_group_empty(tsk) || signal_group_exit(tsk->signal)) {
 		tsk->flags |= PF_EXITING;
 		return;
@@ -1956,6 +1957,7 @@ void exit_signals(struct task_struct *tsk)
 	 * see wants_signal(), do_signal_stop().
 	 */
 	tsk->flags |= PF_EXITING;
+	// 没有pending信号,直接返回
 	if (!signal_pending(tsk))
 		goto out;
 
@@ -1965,12 +1967,13 @@ void exit_signals(struct task_struct *tsk)
 	 */
 	for (t = tsk; (t = next_thread(t)) != tsk; )
 		if (!signal_pending(t) && !(t->flags & PF_EXITING))
-			recalc_sigpending_and_wake(t);
+			recalc_sigpending_and_wake(t);	// 重置信号PENDING状态，然后唤醒
 
+	// 线程组的最后一个线程即将退出咯
 	if (unlikely(tsk->signal->group_stop_count) &&
 			!--tsk->signal->group_stop_count) {
 		tsk->signal->flags = SIGNAL_STOP_STOPPED;
-		group_stop = tracehook_notify_jctl(CLD_STOPPED, CLD_STOPPED);
+		group_stop = tracehook_notify_jctl(CLD_STOPPED, CLD_STOPPED); // return CLD_STOPPED
 	}
 out:
 	spin_unlock_irq(&tsk->sighand->siglock);
