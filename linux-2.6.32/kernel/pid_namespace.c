@@ -186,6 +186,7 @@ void zap_pid_ns_processes(struct pid_namespace *pid_ns)
 
 static __init int pid_namespaces_init(void)
 {
+	// 构造pid_namespace的slab分配器
 	pid_ns_cachep = KMEM_CACHE(pid_namespace, SLAB_PANIC);
 	return 0;
 }

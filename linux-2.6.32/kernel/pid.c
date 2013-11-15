@@ -81,6 +81,7 @@ struct pid_namespace init_pid_ns = {
 };
 EXPORT_SYMBOL_GPL(init_pid_ns);
 
+// 是否是该ns中的init角色
 int is_container_init(struct task_struct *tsk)
 {
 	int ret = 0;
@@ -112,9 +113,11 @@ EXPORT_SYMBOL(is_container_init);
 
 static  __cacheline_aligned_in_smp DEFINE_SPINLOCK(pidmap_lock);
 
+// 释放一个进程的pid号码
 static void free_pidmap(struct upid *upid)
 {
 	int nr = upid->nr;
+	// 在pidmap数组中寻找相应的页面
 	struct pidmap *map = upid->ns->pidmap + nr / BITS_PER_PAGE;
 	int offset = nr & BITS_PER_PAGE_MASK;
 
@@ -127,11 +130,12 @@ static int alloc_pidmap(struct pid_namespace *pid_ns)
 	int i, offset, max_scan, pid, last = pid_ns->last_pid;
 	struct pidmap *map;
 
-	pid = last + 1;
+	pid = last + 1;	// 可能会分配到的pid
 	if (pid >= pid_max)
-		pid = RESERVED_PIDS;
+		pid = RESERVED_PIDS;	// 回绕
 	offset = pid & BITS_PER_PAGE_MASK;
 	map = &pid_ns->pidmap[pid/BITS_PER_PAGE];
+	// 待扫描的页面数目
 	max_scan = (pid_max + BITS_PER_PAGE - 1)/BITS_PER_PAGE - !offset;
 	for (i = 0; i <= max_scan; ++i) {
 		if (unlikely(!map->page)) {
@@ -172,9 +176,11 @@ static int alloc_pidmap(struct pid_namespace *pid_ns)
 			++map;
 			offset = 0;
 		} else {
+			// 绕回，从RESERVED_PIDS开始
 			map = &pid_ns->pidmap[0];
 			offset = RESERVED_PIDS;
-			if (unlikely(last == offset))
+			if (unlikely(last == offset))	// 最初就是从last开始找的
+										// 如果又回到这儿，意味找不到
 				break;
 		}
 		pid = mk_pid(pid_ns, map, offset);
@@ -190,6 +196,9 @@ int next_pidmap(struct pid_namespace *pid_ns, unsigned int last)
 	if (last >= PID_MAX_LIMIT)
 		return -1;
 
+	// 假设每页是4096BITS，那么BITS_PER_PAGE_MASK就是
+	// 1111 1111 1111
+	// 所以offset就是在最后一页上的offset(从0开始算起哦)
 	offset = (last + 1) & BITS_PER_PAGE_MASK;
 	map = &pid_ns->pidmap[(last + 1)/BITS_PER_PAGE];
 	end = &pid_ns->pidmap[PIDMAP_ENTRIES];
@@ -199,6 +208,7 @@ int next_pidmap(struct pid_namespace *pid_ns, unsigned int last)
 		offset = find_next_bit((map)->page, BITS_PER_PAGE, offset);
 		if (offset < BITS_PER_PAGE)
 			return mk_pid(pid_ns, map, offset);
+		// 如果offset > BITS_PER_PAGE，offset进入下次循环前会被clear为0
 	}
 	return -1;
 }
@@ -250,6 +260,7 @@ struct pid *alloc_pid(struct pid_namespace *ns)
 	struct pid_namespace *tmp;
 	struct upid *upid;
 
+	// 从slab中分配一个pid结构
 	pid = kmem_cache_alloc(ns->pid_cachep, GFP_KERNEL);
 	if (!pid)
 		goto out;
@@ -490,6 +501,7 @@ struct pid *find_ge_pid(int nr, struct pid_namespace *ns)
 			break;
 		nr = next_pidmap(ns, nr);
 	} while (nr > 0);
+	// 因为参数中nr>=0，所以ge_pid一定>0
 
 	return pid;
 }
