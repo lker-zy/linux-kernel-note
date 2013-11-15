@@ -83,6 +83,7 @@ static int sig_ignored(struct task_struct *t, int sig, int from_ancestor_ns)
 	/*
 	 * Tracers may want to know about even ignored signals.
 	 */
+	// 判断是否被调试器跟踪，被跟踪的进程不能忽略信号
 	return !tracehook_consider_ignored_signal(t, sig);
 }
 
@@ -207,6 +208,8 @@ static struct sigqueue *__sigqueue_alloc(struct task_struct *t, gfp_t flags,
 	 */
 	user = get_uid(__task_cred(t)->user);
 	atomic_inc(&user->sigpending);
+	// 用户产生信号 和实时信号 override_rlimit肯定为0,所以受RLIMIT_SIGPENDING控制
+	// 内核信号和特殊信号不受此限制
 	if (override_rlimit ||
 	    atomic_read(&user->sigpending) <=
 			t->signal->rlim[RLIMIT_SIGPENDING].rlim_cur)
@@ -527,7 +530,7 @@ void signal_wake_up_state(struct task_struct *t, unsigned int state)
 	 * handle its death signal.
 	 */
 	if (!wake_up_state(t, state | TASK_INTERRUPTIBLE))
-		kick_process(t);
+		kick_process(t);	// 强制处理器中断处理
 }
 
 /*
@@ -544,10 +547,13 @@ static int rm_from_queue_full(sigset_t *mask, struct sigpending *s)
 	struct sigqueue *q, *n;
 	sigset_t m;
 
+	// 对mask 和s->signal求交集
 	sigandsets(&m, mask, &s->signal);
 	if (sigisemptyset(&m))
 		return 0;
 
+	// 更新s->signal
+	// 对mask求反，然后和s->signal求交鸡，得到signal中不属于mask的信号
 	signandsets(&s->signal, &s->signal, mask);
 	list_for_each_entry_safe(q, n, &s->list, list) {
 		if (sigismember(mask, q->info.si_signo)) {
@@ -774,9 +780,11 @@ static void complete_signal(int sig, struct task_struct *p, int group)
 			if (t == signal->curr_target)
 				/*
 				 * No thread needs to be woken.
-				 * Any eligible threads will see
+				 * Any eligible（合适的) threads will see
 				 * the signal in the queue soon.
 				 */
+				// 没找到合适的线程，那就直接返回咯
+				// 反正后续调度时候，通过shared_pending可以触发信号处理的
 				return;
 		}
 		signal->curr_target = t;
@@ -846,12 +854,14 @@ static int __send_signal(int sig, struct siginfo *info, struct task_struct *t,
 	 * exactly one non-rt signal, so that we can get more
 	 * detailed information about the cause of the signal.
 	 */
+	// 不是实时信号，而且已经在pending队列里面，无需send
 	if (legacy_queue(pending, sig))
 		return 0;
 	/*
 	 * fast-pathed signals for kernel-internal things like SIGSTOP
 	 * or SIGKILL.
 	 */
+	// 强制信号
 	if (info == SEND_SIG_FORCED)
 		goto out_set;
 
@@ -864,6 +874,7 @@ static int __send_signal(int sig, struct siginfo *info, struct task_struct *t,
 	   pass on the info struct.  */
 
 	if (sig < SIGRTMIN)
+		// ->si_code >=0 代表内核信号
 		override_rlimit = (is_si_special(info) || info->si_code >= 0);
 	else
 		override_rlimit = 0;
@@ -889,7 +900,7 @@ static int __send_signal(int sig, struct siginfo *info, struct task_struct *t,
 			q->info.si_uid = 0;
 			break;
 		default:
-			copy_siginfo(&q->info, info);
+			copy_siginfo(&q->info, info);	// TODO,值得一看，看完指导SIGCHLD怎么传递信息给父进程的了
 			if (from_ancestor_ns)
 				q->info.si_pid = 0;
 			break;
@@ -2428,11 +2439,16 @@ int do_sigaction(int sig, struct k_sigaction *act, struct k_sigaction *oact)
 		 *   (for example, SIGCHLD), shall cause the pending signal to
 		 *   be discarded, whether or not it is blocked"
 		 */
+		// 此时sig的handler已经更新
+		// sig_handler判断sig的action是否为SIG_IGN,
+		// 或者如上所说,action == SIG_DEF但是默认操作是忽略该信号
 		if (sig_handler_ignored(sig_handler(t, sig), sig)) {
 			sigemptyset(&mask);
 			sigaddset(&mask, sig);
+			// 对共享pending队列中，已有的pending状态的信号进行清除
 			rm_from_queue_full(&mask, &t->signal->shared_pending);
 			do {
+				// 对线程组中所有私有pending队列实行该操作
 				rm_from_queue_full(&mask, &t->pending);
 				t = next_thread(t);
 			} while (t != current);
@@ -2642,6 +2658,7 @@ SYSCALL_DEFINE2(signal, int, sig, __sighandler_t, handler)
 	new_sa.sa.sa_flags = SA_ONESHOT | SA_NOMASK;
 	sigemptyset(&new_sa.sa.sa_mask);
 
+	// 更新sig-handler，并更新某些pending队列
 	ret = do_sigaction(sig, &new_sa, &old_sa);
 
 	return ret ? ret : (unsigned long)old_sa.sa.sa_handler;
