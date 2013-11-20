@@ -1,7 +1,8 @@
 #ifndef _LINUX_WAIT_H
 #define _LINUX_WAIT_H
 
-#define WNOHANG		0x00000001
+// see man(2) - wait
+#define WNOHANG		0x00000001	// if no child terminated, return immediately
 #define WUNTRACED	0x00000002
 #define WSTOPPED	WUNTRACED
 #define WEXITED		0x00000004

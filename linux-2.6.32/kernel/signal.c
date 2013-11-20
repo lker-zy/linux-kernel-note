@@ -35,6 +35,11 @@
 #include <asm/siginfo.h>
 #include "audit.h"	/* audit_signal_info() */
 
+/*********************************************************************
+ * 信号的传递(处理)总是在从中断或异常返回到用户的前夕:               *
+ * resume_userspace()->work_pending->do_notify_resume()->do_signal() *
+ *********************************************************************/
+
 /*
  * SLAB caches for signal bits.
  */
@@ -654,7 +659,12 @@ static int prepare_signal(int sig, struct task_struct *p, int from_ancestor_ns)
 		 */
 	} else if (sig_kernel_stop(sig)) {
 		/*
+			rt_sigmask(SIGSTOP)   |  rt_sigmask(SIGTSTP)   | 
+			rt_sigmask(SIGTTIN)   |  rt_sigmask(SIGTTOU)   
+		*/
+		/*
 		 * This is a stop signal.  Remove SIGCONT from all queues.
+		 * all queues: shared_pending && private pending
 		 */
 		rm_from_queue(sigmask(SIGCONT), &signal->shared_pending);
 		t = p;
@@ -665,7 +675,7 @@ static int prepare_signal(int sig, struct task_struct *p, int from_ancestor_ns)
 		unsigned int why;
 		/*
 		 * Remove all stop signals from all queues,
-		 * and wake all threads.
+		 * and #wake all threads#.
 		 */
 		rm_from_queue(SIG_KERNEL_STOP_MASK, &signal->shared_pending);
 		t = p;
@@ -675,7 +685,8 @@ static int prepare_signal(int sig, struct task_struct *p, int from_ancestor_ns)
 			/*
 			 * If there is a handler for SIGCONT, we must make
 			 * sure that no thread returns to user mode before
-			 * we post the signal, in case it was the only
+			 * we post the signal, 
+			 * in case(免得、以防、也许) it was the only
 			 * thread eligible to run the signal handler--then
 			 * it must not do anything between resuming and
 			 * running the handler.  With the TIF_SIGPENDING
@@ -685,13 +696,15 @@ static int prepare_signal(int sig, struct task_struct *p, int from_ancestor_ns)
 			 *
 			 * Wake up the stopped thread _after_ setting
 			 * TIF_SIGPENDING
+			 * 因为设置了TIF_SIGPENDING,然后wake_up线程，所以线程
+			 * 重新running的时候能检测到SIGCONT信号并执行相应的handler
 			 */
 			state = __TASK_STOPPED;
 			if (sig_user_defined(t, SIGCONT) && !sigismember(&t->blocked, SIGCONT)) {
 				set_tsk_thread_flag(t, TIF_SIGPENDING);
 				state |= TASK_INTERRUPTIBLE;
 			}
-			wake_up_state(t, state);
+			wake_up_state(t, state);	// 唤醒state为__TASK_STOPPED的线程
 		} while_each_thread(p, t);
 
 		/*
@@ -703,9 +716,9 @@ static int prepare_signal(int sig, struct task_struct *p, int from_ancestor_ns)
 		 * CLD_CONTINUED was dropped.
 		 */
 		why = 0;
-		if (signal->flags & SIGNAL_STOP_STOPPED)
+		if (signal->flags & SIGNAL_STOP_STOPPED)	// 说明所有的线程都已经停止了(STOPPED)
 			why |= SIGNAL_CLD_CONTINUED;
-		else if (signal->group_stop_count)
+		else if (signal->group_stop_count)	// stop还在进行中
 			why |= SIGNAL_CLD_STOPPED;
 
 		if (why) {
@@ -715,7 +728,7 @@ static int prepare_signal(int sig, struct task_struct *p, int from_ancestor_ns)
 			 * notify its parent. See get_signal_to_deliver().
 			 */
 			signal->flags = why | SIGNAL_STOP_CONTINUED;
-			signal->group_stop_count = 0;
+			signal->group_stop_count = 0;	// 不继续group stop了
 			signal->group_exit_code = 0;
 		} else {
 			/*
@@ -811,7 +824,8 @@ static void complete_signal(int sig, struct task_struct *p, int group)
 			 */
 			signal->flags = SIGNAL_GROUP_EXIT;
 			signal->group_exit_code = sig;
-			signal->group_stop_count = 0;
+			signal->group_stop_count = 0;	// ?? 将要KILL所有线程，为什么group_stop_count 为0?
+											// because:     stop != exit
 			t = p;
 			do {
 				sigaddset(&t->pending.signal, SIGKILL);
@@ -900,7 +914,7 @@ static int __send_signal(int sig, struct siginfo *info, struct task_struct *t,
 			q->info.si_uid = 0;
 			break;
 		default:
-			copy_siginfo(&q->info, info);	// TODO,值得一看，看完指导SIGCHLD怎么传递信息给父进程的了
+			copy_siginfo(&q->info, info);	// TODO,值得一看，看完知道SIGCHLD怎么传递信息给父进程的了
 			if (from_ancestor_ns)
 				q->info.si_pid = 0;
 			break;
@@ -1522,6 +1536,7 @@ static void do_notify_parent_cldstop(struct task_struct *tsk, int why)
 	/*
 	 * Even if SIGCHLD is not generated, we must wake up wait4 calls.
 	 */
+	// 如函数开头，如果是被trace呢，就将其parent置为trace发起者，通知trace者相关事件
 	__wake_up_parent(tsk, parent);
 	spin_unlock_irqrestore(&sighand->siglock, flags);
 }
@@ -1656,6 +1671,7 @@ void ptrace_notify(int exit_code)
 {
 	siginfo_t info;
 
+	// exit_code = ((event << 8) | SIGTRAP);
 	BUG_ON((exit_code & (0x7f | ~0xffff)) != SIGTRAP);
 
 	memset(&info, 0, sizeof info);
@@ -1681,11 +1697,11 @@ static int do_signal_stop(int signr)
 	struct signal_struct *sig = current->signal;
 	int notify;
 
-	if (!sig->group_stop_count) {
+	if (!sig->group_stop_count) {	// group stop 尚未开始
 		struct task_struct *t;
 
 		if (!likely(sig->flags & SIGNAL_STOP_DEQUEUED) ||
-		    unlikely(signal_group_exit(sig)))
+		    unlikely(signal_group_exit(sig)))	// 线程组正在退出……
 			return 0;
 		/*
 		 * There is no group stop already in progress.
@@ -1700,10 +1716,11 @@ static int do_signal_stop(int signr)
 			 * stop is always done with the siglock held,
 			 * so this check has no races.
 			 */
+			// 检查是否有必要进行stop，如果进程有PF_EXITING标志，当然略过
 			if (!(t->flags & PF_EXITING) &&
 			    !task_is_stopped_or_traced(t)) {
-				sig->group_stop_count++;
-				signal_wake_up(t, 0);
+				sig->group_stop_count++;	// 累积需要stop的线程数量
+				signal_wake_up(t, 0);		// 并唤醒之
 			}
 	}
 	/*
@@ -1712,6 +1729,12 @@ static int do_signal_stop(int signr)
 	 * to the parent.  When ptraced, every thread reports itself.
 	 */
 	notify = sig->group_stop_count == 1 ? CLD_STOPPED : 0;
+	// 如果是最后一个，notify = CLD_STOPPED
+	// 否则，如果被跟踪，notify = CLD_STOPPED
+	// 否则， notify = 0
+	//
+	// 综上， 只有线程是最后一个执行stop的线程或者线程被调试追踪的时候,
+	// 才需要notify parent
 	notify = tracehook_notify_jctl(notify, CLD_STOPPED);
 	/*
 	 * tracehook_notify_jctl() can drop and reacquire siglock, so
@@ -1719,6 +1742,7 @@ static int do_signal_stop(int signr)
 	 * or SIGKILL comes in between ->group_stop_count == 0.
 	 */
 	if (sig->group_stop_count) {
+		// 最后一个stop的线程
 		if (!--sig->group_stop_count)
 			sig->flags = SIGNAL_STOP_STOPPED;
 		current->exit_code = sig->group_exit_code;
@@ -1809,6 +1833,7 @@ relock:
 				? CLD_CONTINUED : CLD_STOPPED;
 		signal->flags &= ~SIGNAL_CLD_MASK;
 
+		// 根据上面why的初始化，不是CLD_CONTINUED就是CLD_STOPPED
 		why = tracehook_notify_jctl(why, CLD_CONTINUED);
 		spin_unlock_irq(&sighand->siglock);
 
@@ -1820,6 +1845,7 @@ relock:
 		goto relock;
 	}
 
+	// 下面的处理就不再和CLD_CONTINUED和CLD_STOPPED相关了
 	for (;;) {
 		struct k_sigaction *ka;
 
@@ -1838,13 +1864,16 @@ relock:
 		if (unlikely(signr != 0))
 			ka = return_ka;
 		else {
+			// 从信号队列中取出一个信号, 优先处理私有pending中的信号
 			signr = dequeue_signal(current, &current->blocked,
 					       info);
 
+			// 没有需要处理的信号了
 			if (!signr)
 				break; /* will return 0 */
 
 			if (signr != SIGKILL) {
+				// 发送到调试器进程，激活调试器，停止当前进程
 				signr = ptrace_signal(signr, info,
 						      regs, cookie);
 				if (!signr)
@@ -1854,8 +1883,12 @@ relock:
 			ka = &sighand->action[signr-1];
 		}
 
+		// 忽略该信号，可是为嘛 continue???
+		//	因为这个信号不需要用户空间操作，所以选取下一个信号进行处理
 		if (ka->sa.sa_handler == SIG_IGN) /* Do nothing.  */
 			continue;
+
+		// 用户自定义处理逻辑
 		if (ka->sa.sa_handler != SIG_DFL) {
 			/* Run the handler.  */
 			*return_ka = *ka;
@@ -1864,11 +1897,15 @@ relock:
 				ka->sa.sa_handler = SIG_DFL;
 
 			break; /* will return non-zero "signr" value */
+			// 这么多分支里面，只有这一个break
+			// 说明只有在信号设置有用户自定义处理函数时，需要返回用户空间进行操作
 		}
 
 		/*
 		 * Now we are doing the default action for this signal.
 		 */
+		// 默认处理
+		// 1. 如果默认处理动作是ignore, 啥也不作为，为嘛又continue?
 		if (sig_kernel_ignore(signr)) /* Default is nothing. */
 			continue;
 
@@ -1883,7 +1920,7 @@ relock:
 		 * case, the signal cannot be dropped.
 		 */
 		if (unlikely(signal->flags & SIGNAL_UNKILLABLE) &&
-				!sig_kernel_only(signr))
+				!sig_kernel_only(signr))	// SIGKILL SIGSTOP
 			continue;
 
 		if (sig_kernel_stop(signr)) {
@@ -1927,6 +1964,7 @@ relock:
 		 */
 		current->flags |= PF_SIGNALED;
 
+		// coredump
 		if (sig_kernel_coredump(signr)) {
 			if (print_fatal_signals)
 				print_fatal_signal(regs, info->si_signo);
@@ -1941,6 +1979,7 @@ relock:
 			do_coredump(info->si_signo, info->si_signo, regs);
 		}
 
+		// 其余情况，exit
 		/*
 		 * Death signals, no core dump.
 		 */
@@ -2290,7 +2329,11 @@ do_send_specific(pid_t tgid, pid_t pid, int sig, struct siginfo *info)
 	int error = -ESRCH;
 
 	rcu_read_lock();
-	p = find_task_by_vpid(pid);
+	p = find_task_by_vpid(pid);	// 找到在当前ns(init-ns)中的struct pid*，然后获得其struct task_struct
+
+	// tkill : tgid = 0
+	// tgkill: tgid > 0
+	// task_tgid_vnr(p) == tgid,确保tgid 和 pid吻合(同一个线程组)
 	if (p && (tgid <= 0 || task_tgid_vnr(p) == tgid)) {
 		error = check_kill_permission(sig, info, p);
 		/*
@@ -2313,6 +2356,9 @@ do_send_specific(pid_t tgid, pid_t pid, int sig, struct siginfo *info)
 	return error;
 }
 
+// 会被tkill和tgkill调用
+// tkill : tgid = 0
+// tgkill: tgid > 0
 static int do_tkill(pid_t tgid, pid_t pid, int sig)
 {
 	struct siginfo info = {};

@@ -1259,7 +1259,7 @@ static int wait_task_zombie(struct wait_opts *wo, struct task_struct *p)
 		return 0;
 	}
 
-	traced = ptrace_reparented(p);
+	traced = ptrace_reparented(p);	// 检查p是否被traced
 	/*
 	 * It can be ptraced but not reparented, check
 	 * !task_detached() to filter out sub-threads.

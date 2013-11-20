@@ -192,7 +192,7 @@ extern unsigned long long time_sync_thresh;
 #define EXIT_DEAD		32
 /* in tsk->state again */
 #define TASK_DEAD		64
-#define TASK_WAKEKILL		128
+#define TASK_WAKEKILL		128	// 接收到致命信号时候唤醒进程
 #define TASK_WAKING		256
 
 /* Convenience macros for the sake of set_task_state */
@@ -2095,6 +2095,11 @@ static inline int kill_cad_pid(int sig, int priv)
 #define SEND_SIG_NOINFO ((struct siginfo *) 0)
 #define SEND_SIG_PRIV	((struct siginfo *) 1)
 #define SEND_SIG_FORCED	((struct siginfo *) 2)
+/*
+　　SEND_SIG_NOINFO : 表示信号由用户态进程发送; 
+　　SEND_SIG_PRIV : 表示信号由内核态( 进程) 发送;
+　　SEND_SIG_FORCED : 表示信号由内核态( 进程) 发送, 并且信号是SIGKILL 或者SIGSTOP.
+*/
 
 static inline int is_si_special(const struct siginfo *info)
 {

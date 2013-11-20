@@ -778,6 +778,7 @@ late_initcall(sched_init_debug);
 
 #endif
 
+//判断kernel中有哪些feaures开启了 
 #define sched_feat(x) (sysctl_sched_features & (1UL << __SCHED_FEAT_##x))
 
 /*
