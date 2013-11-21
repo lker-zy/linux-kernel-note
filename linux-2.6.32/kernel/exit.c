@@ -900,6 +900,9 @@ static void exit_notify(struct task_struct *tsk, int group_dead)
 	tsk->exit_state = signal == DEATH_REAP ? EXIT_DEAD : EXIT_ZOMBIE;
 
 	/* mt-exec, de_thread() is waiting for us */
+	// 主要是应对execl这类调用，线程组里面有一个线程调用了这族函数，则：
+	// 线程组所有线程(除了group_exit_task)都需要exit
+	// 都退出以后，通知group_exit_task线程开始处理
 	if (thread_group_leader(tsk) &&
 	    tsk->signal->group_exit_task &&
 	    tsk->signal->notify_count < 0)
@@ -1004,6 +1007,7 @@ NORET_TYPE void do_exit(long code)
 
 	acct_update_integrals(tsk);
 
+	// 线程组消亡，做些必要的清理
 	group_dead = atomic_dec_and_test(&tsk->signal->live);
 	if (group_dead) {
 		hrtimer_cancel(&tsk->signal->real_timer);
@@ -1181,10 +1185,30 @@ static int eligible_child(struct wait_opts *wo, struct task_struct *p)
 	 * set; otherwise, wait for non-clone children *only*.  (Note:
 	 * A "clone" child here is one that reports to its parent
 	 * using a signal other than SIGCHLD.) */
+
+	// 1. exit_sig = ( exit_signal != SIGCHLD )
+	// 2. clone = !!(flags & __WCLONE)
+	// 3. wall = flags & __ WALL
+	//
+	// if exit_sig == 0 <signal == SIGCHLD>
+	//		if clone == 0  < flag != __WCLONE, clone == 0, !clone == 1, !!clone == 0>
+	//			return 1	// condtion is false
+	//		else clone == 1
+	//			if wall == 1	: return 0
+	//			else wall == 0	: return 1
+	// else exit_sig == 1	<signal != SIGCHLD>
+	//		if clone == 1 
+	//			return 1	// condtion is false
+	//		else clone == 0
+	//			if wall == 1	: return 0
+	//			else wall == 0	: return 1
 	if (((p->exit_signal != SIGCHLD) ^ !!(wo->wo_flags & __WCLONE))
 	    && !(wo->wo_flags & __WALL))
 		return 0;
 
+	// 1. wait 所有 children
+	// 2. wait clone 线程：设置了__WCLONE且exit_signal不时SIGCHLD
+	// 3. 等待非clone线程，这时exit_signal是SIGCHLD,但是没设置__WCLONE
 	return 1;
 }
 
@@ -1420,6 +1444,10 @@ static int wait_task_stopped(struct wait_opts *wo,
 	/*
 	 * Traditionally we see ptrace'd stopped tasks regardless of options.
 	 */
+	// 如果没被追踪，且没有设置WUNTRACED，则不关心STOP啦
+	// man(2) waitpid -- WUNTRACED: 
+	//		which means to also return for children which are stopped (but not traced), and whose status has not been reported
+	//		Status for traced children which are stopped is provided also without this option.
 	if (!ptrace && !(wo->wo_flags & WUNTRACED))
 		return 0;
 
@@ -1559,11 +1587,13 @@ static int wait_consider_task(struct wait_opts *wo, int ptrace,
 		 * to look for security policy problems, rather
 		 * than for mysterious wait bugs.
 		 */
+		// 权限不对，就返回权限不对的信息，否则返回ECHILD错误
 		if (wo->notask_error)
 			wo->notask_error = ret;
 		return 0;
 	}
 
+	// 不考虑调试追踪的进程,可偏偏是被跟踪了,不理睬
 	if (likely(!ptrace) && unlikely(task_ptrace(p))) {
 		/*
 		 * This child is hidden by ptrace.
@@ -1573,12 +1603,14 @@ static int wait_consider_task(struct wait_opts *wo, int ptrace,
 		return 0;
 	}
 
+	// 线程已经被干掉了，都清理的渣渣都没了，不管了
 	if (p->exit_state == EXIT_DEAD)
 		return 0;
 
 	/*
 	 * We don't reap group leaders with subthreads.
 	 */
+	// 是组长，且组里面成员都死光光了，组长也该歇菜了
 	if (p->exit_state == EXIT_ZOMBIE && !delay_group_leader(p))
 		return wait_task_zombie(wo, p);
 
@@ -1586,6 +1618,7 @@ static int wait_consider_task(struct wait_opts *wo, int ptrace,
 	 * It's stopped or running now, so it might
 	 * later continue, exit, or stop again.
 	 */
+	// 还没有想死的进程，先等着吧
 	wo->notask_error = 0;
 
 	if (task_stopped_code(p, ptrace))
@@ -1611,6 +1644,7 @@ static int do_wait_thread(struct wait_opts *wo, struct task_struct *tsk)
 		/*
 		 * Do not consider detached threads.
 		 */
+		// detached线程不需要wait，因为会自己清理战场
 		if (!task_detached(p)) {
 			int ret = wait_consider_task(wo, 0, p);
 			if (ret)
@@ -1683,6 +1717,7 @@ repeat:
 	tsk = current;
 	do {
 		retval = do_wait_thread(wo, tsk);
+		// 返回0代表没有wait到一个满意的
 		if (retval)
 			goto end;
 

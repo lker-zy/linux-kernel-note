@@ -53,8 +53,11 @@ extern void thaw_processes(void);
 
 static inline int try_to_freeze(void)
 {
-	if (freezing(current)) {
-		refrigerator();
+	if (freezing(current)) {	// 检查TIF_FREEZE是否置位，
+								// 通过freeze_processes()将所有可冷冻任务进行该标志置位
+		refrigerator();	// 设置线程的的PF_FROZEN标志
+						// 将任务的状态切换至TASK_UNINTERRUPTIBLE
+						// 并且使得该任务不断的循环直到PF_FROZEN标准被清除
 		return 1;
 	} else
 		return 0;

@@ -423,8 +423,11 @@ static int __dequeue_signal(struct sigpending *pending, sigset_t *mask,
 	int sig = next_signal(pending, mask);
 
 	if (sig) {
-		if (current->notifier) {
+		if (current->notifier) {	// 如果设置了notifer，执行notifer
+									// 见block_all_signals
 			if (sigismember(current->notifier_mask, sig)) {
+				// 如果执行结果为0,则信号被block
+				// 返回非0，信号透传，返回这个sig给上层处理
 				if (!(current->notifier)(current->notifier_data)) {
 					clear_thread_flag(TIF_SIGPENDING);
 					return 0;
@@ -499,6 +502,7 @@ int dequeue_signal(struct task_struct *tsk, sigset_t *mask, siginfo_t *info)
 		 */
 		tsk->signal->flags |= SIGNAL_STOP_DEQUEUED;
 	}
+	// TODO: XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 	if ((info->si_code & __SI_MASK) == __SI_TIMER && info->si_sys_private) {
 		/*
 		 * Release the siglock to ensure proper locking order
@@ -1756,6 +1760,7 @@ static int do_signal_stop(int signr)
 		read_unlock(&tasklist_lock);
 	}
 
+	// 为什么要冷冻线程?
 	/* Now we don't run again until woken by SIGCONT or SIGKILL */
 	do {
 		schedule();
@@ -2015,11 +2020,12 @@ void exit_signals(struct task_struct *tsk)
 	 * notify about group-wide signal. Another thread should be
 	 * woken now to take the signal since we will not.
 	 */
+	// 有pending信号，但是我自己不想处理，找一个线程组里面其他合适的线程进行处理吧
 	for (t = tsk; (t = next_thread(t)) != tsk; )
 		if (!signal_pending(t) && !(t->flags & PF_EXITING))
 			recalc_sigpending_and_wake(t);	// 重置信号PENDING状态，然后唤醒
 
-	// 线程组的最后一个线程即将退出咯
+	// group在stop过程中，且本线程是要stop的最后一个线程,需要通知爸爸
 	if (unlikely(tsk->signal->group_stop_count) &&
 			!--tsk->signal->group_stop_count) {
 		tsk->signal->flags = SIGNAL_STOP_STOPPED;
