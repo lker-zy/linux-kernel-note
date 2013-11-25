@@ -510,6 +510,7 @@ struct pid *find_ge_pid(int nr, struct pid_namespace *ns)
  * The pid hash table is scaled according to the amount of memory in the
  * machine.  From a minimum of 16 slots up to 4096 slots at one gigabyte or
  * more.
+ * minimum : 2^4(pidhash_shift)
  */
 void __init pidhash_init(void)
 {

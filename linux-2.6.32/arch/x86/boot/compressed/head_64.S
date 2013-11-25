@@ -39,12 +39,15 @@
 ENTRY(startup_32)
 	cld
 	/*
-	 * Test KEEP_SEGMENTS flag to see if the bootloader is asking
+	 * Test KEEP_SEGMENTS(段保持标志) flag to see if the bootloader is asking
 	 * us to not reload segments
 	 */
 	testb $(1<<6), BP_loadflags(%esi)
 	jnz 1f
 
+	/*
+		需要重新设置段寄存器
+	 */
 	cli
 	movl	$(__KERNEL_DS), %eax
 	movl	%eax, %ds
@@ -60,15 +63,23 @@ ENTRY(startup_32)
  * data at 0x1e4 (defined as a scratch field) are used as the stack
  * for this calculation. Only 4 bytes are needed.
  */
-	leal	(BP_scratch+4)(%esi), %esp
-	call	1f
-1:	popl	%ebp
-	subl	$1b, %ebp
+/*
+ * call 1f  : call会将ret ip压栈，而此时ret ip即标号1f的地址
+ * call之后，即跳转到1f后，执行该函数，该函数先求得%ebp，%ebp = %eip
+ * 然后执行 subl $1b, $ebp, $1b是编译时预期的1f的地址，即理论值
+ * call放入栈中的(%ebp中的值)，是实际加载地址， %ebp = %ebp - $1b
+ * 可得： %ebp中保存了理论值和实际值的差距,即内核加载的基地址
+ * 即startup_32的实际地址
+ */
+	leal	(BP_scratch+4)(%esi), %esp	# boot_params.scratch的地址设置成为堆栈顶
+	call	1f							# 想想函数调用的过程:压入%eip
+1:	popl	%ebp						# 所以函数1: 第一条指令popl就能取到%eip的值
+	subl	$1b, %ebp					# %ebp中包含的是startup_32的加载地址啦
 
 /* setup a stack and make sure cpu supports long mode. */
 	movl	$boot_stack_end, %eax
 	addl	%ebp, %eax
-	movl	%eax, %esp
+	movl	%eax, %esp				# 设置一个堆栈区域
 
 	call	verify_cpu
 	testl	%eax, %eax
@@ -95,6 +106,7 @@ ENTRY(startup_32)
 #endif
 
 	/* Target address to relocate to for decompression */
+	/* 在对齐后的地址之上加一个解压偏移作为解压地址
 	addl	$z_extract_offset, %ebx
 
 /*
@@ -166,7 +178,7 @@ ENTRY(startup_32)
 	 * used to perform that far jump.
 	 */
 	pushl	$__KERNEL_CS
-	leal	startup_64(%ebp), %eax
+	leal	startup_64(%ebp), %eax	// %ebp是内核加载基址, 将%ebp + startup_64这个绝对值加载到%eax
 	pushl	%eax
 
 	/* Enter paged protected Mode, activating Long Mode */
@@ -174,7 +186,7 @@ ENTRY(startup_32)
 	movl	%eax, %cr0
 
 	/* Jump from 32bit compatibility mode into 64bit mode. */
-	lret
+	lret	// 返回后的地址就是startup_64，64bit模式下的startup_64
 ENDPROC(startup_32)
 
 no_longmode:
@@ -227,7 +239,12 @@ ENTRY(startup_64)
 
 	/* Start with the delta to where the kernel will run at. */
 #ifdef CONFIG_RELOCATABLE
-	leaq	startup_32(%rip) /* - $startup_32 */, %rbp
+	/*
+	 * see : http://stackoverflow.com/questions/9354941/retrieving-data-in-x86-64
+	 * The leaq instruction gets the address of startup_32 using an offset of the instruction pointer(%rip)
+	 * which can be calculated at link time. Then the movl instruction uses that address as the base for loading the data
+	 */
+	leaq	startup_32(%rip) /* - $startup_32 */, %rbp	# leaq startup_32(%rip) , %rbp，表示加载startup_32的地址到%rbp中
 	movl	BP_kernel_alignment(%rsi), %eax
 	decl	%eax
 	addq	%rax, %rbp
@@ -254,7 +271,7 @@ ENTRY(startup_64)
 	pushq	%rsi
 	leaq	(_bss-8)(%rip), %rsi
 	leaq	(_bss-8)(%rbx), %rdi
-	movq	$_bss /* - $startup_32 */, %rcx
+	movq	$_bss /* - $startup_32 */, %rcx	// move的数量, startup_32到_bss的内容都搬到%rbx的地方
 	shrq	$3, %rcx
 	std
 	rep	movsq
@@ -264,7 +281,7 @@ ENTRY(startup_64)
 /*
  * Jump to the relocated address.
  */
-	leaq	relocated(%rbx), %rax
+	leaq	relocated(%rbx), %rax	// 跳转到搬移后的代码：相对于%rbx的relocated偏移的地址,执行解压缩代码
 	jmp	*%rax
 
 	.text

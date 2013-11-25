@@ -121,6 +121,10 @@ void go_to_protected_mode(void)
 	/* Actual transition to protected mode... */
 	setup_idt();
 	setup_gdt();
+	// code32_start定义在header.S中
+	// ds() 是%ds, << 4 即乘以16 
+	//		加上boot_params的编译量，即为boot_params线性地址
+	// protectd_mode_jump位于pmjump.S中
 	protected_mode_jump(boot_params.hdr.code32_start,
 			    (u32)&boot_params + (ds() << 4));
 }

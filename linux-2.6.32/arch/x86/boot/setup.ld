@@ -9,18 +9,18 @@ ENTRY(_start)
 
 SECTIONS
 {
-	. = 0;
+	. = 0;							/* 定位器*/
 	.bstext		: { *(.bstext) }
 	.bsdata		: { *(.bsdata) }
 
-	. = 497;
+	. = 497;						/*后面的段从497 offset开始, header.S的header结构开始处*/
 	.header		: { *(.header) }
 	.entrytext	: { *(.entrytext) }
 	.inittext	: { *(.inittext) }
 	.initdata	: { *(.initdata) }
 	__end_init = .;
 
-	.text		: { *(.text) }
+	.text		: { *(.text) }		/*所有链接文件的text段合并*/
 	.text32		: { *(.text32) }
 
 	. = ALIGN(16);

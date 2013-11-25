@@ -1243,6 +1243,7 @@ void wake_up_idle_cpu(int cpu)
 static u64 sched_avg_period(void)
 {
 	return (u64)sysctl_sched_time_avg * NSEC_PER_MSEC / 2;
+	// 纳秒
 }
 
 static void sched_avg_update(struct rq *rq)
@@ -1257,6 +1258,7 @@ static void sched_avg_update(struct rq *rq)
 		 */
 		asm("" : "+rm" (rq->age_stamp));
 		rq->age_stamp += period;
+		// TODO: xxx
 		rq->rt_avg /= 2;
 	}
 }
@@ -3214,6 +3216,7 @@ static void calc_load_account_active(struct rq *this_rq)
  * Update rq->cpu_load[] statistics. This function is usually called every
  * scheduler tick (TICK_NSEC).
  */
+// struct rq  ： 每个CPU一个运行队列
 static void update_cpu_load(struct rq *this_rq)
 {
 	unsigned long this_load = this_rq->load.weight;
@@ -3236,6 +3239,7 @@ static void update_cpu_load(struct rq *this_rq)
 		 */
 		if (new_load > old_load)
 			new_load += scale-1;
+		// TODO: xxx
 		this_rq->cpu_load[i] = (old_load*(scale-1) + new_load) >> i;
 	}
 

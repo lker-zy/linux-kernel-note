@@ -50,7 +50,7 @@ ENTRY(startup_32)
 1:
 
 /*
- * Calculate the delta between where we were compiled to run
+ * Calculate the delta between where we were compiled(期望的加载地址) to run
  * at and where we were actually loaded at.  This can only be done
  * with a short local call on x86.  Nothing  else will tell us what
  * address we are running at.  The reserved chunk of the real-mode

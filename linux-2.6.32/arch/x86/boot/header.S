@@ -50,7 +50,7 @@ bootsect_start:
 	ljmp	$BOOTSEG, $start2
 
 start2:
-	movw	%cs, %ax
+	movw	%cs, %ax # %cs = 0x07c0 @line 28
 	movw	%ax, %ds
 	movw	%ax, %es
 	movw	%ax, %ss
@@ -91,6 +91,7 @@ bugger_off_msg:
 	# Kernel attributes; used by setup.  This is part 1 of the
 	# header, from the old boot sector.
 
+# 变量声明
 	.section ".header", "a"
 	.globl	hdr
 hdr:
@@ -110,7 +111,7 @@ _start:
 		# tries to generate a 3-byte jump here, which causes
 		# everything else to push off to the wrong offset.
 		.byte	0xeb		# short (2-byte) jump
-		.byte	start_of_setup-1f
+		.byte	start_of_setup-1f	# 偏移量，start_of_setup相对于当前位置的偏移
 1:
 
 	# Part 2 of the header, from the old setup.S
@@ -256,6 +257,7 @@ start_of_setup:
 # pointer if %ss is invalid.  Otherwise leave it alone, LOADLIN sets up the
 # stack behind its own code, so we can't blindly put it directly past the heap.
 
+# %ax == %ds
 	movw	%ss, %dx
 	cmpw	%ax, %dx	# %ds == %ss?
 	movw	%sp, %dx
@@ -264,22 +266,23 @@ start_of_setup:
 	# Invalid %ss, make up a new stack
 	movw	$_end, %dx
 	testb	$CAN_USE_HEAP, loadflags
-	jz	1f
+	jz	1f				# CAN_USE_HEAP为0,跳转到1:, 否则继续执行，使用heap_end_ptr
 	movw	heap_end_ptr, %dx
 1:	addw	$STACK_SIZE, %dx
-	jnc	2f
+	jnc	2f				#上述加法无进位
 	xorw	%dx, %dx	# Prevent wraparound
 
 2:	# Now %dx should point to the end of our stack space
 	andw	$~3, %dx	# dword align (might as well...)
-	jnz	3f
+	jnz	3f				# %dx不为0则跳转, 否则强制赋值一个值作为栈
 	movw	$0xfffc, %dx	# Make sure we're not zero
-3:	movw	%ax, %ss
+3:	movw	%ax, %ss		# where does %ax from
 	movzwl	%dx, %esp	# Clear upper half of %esp
 	sti			# Now we should have a working stack
 
 # We will have entered with %cs = %ds+0x20, normalize %cs so
 # it is on par with the other segments.
+# 为什马要搞这么一套呢？最终都是调用lretw啊
 	pushw	%ds
 	pushw	$6f
 	lretw
@@ -290,8 +293,8 @@ start_of_setup:
 	jne	setup_bad
 
 # Zero the bss
-	movw	$__bss_start, %di
-	movw	$_end+3, %cx
+	movw	$__bss_start, %di	# 设置操作的目的数
+	movw	$_end+3, %cx		# 设置操作的源数
 	xorl	%eax, %eax
 	subw	%di, %cx
 	shrw	$2, %cx
