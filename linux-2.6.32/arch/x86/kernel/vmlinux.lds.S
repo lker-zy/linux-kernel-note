@@ -13,6 +13,11 @@
  * change if kernel is relocated, make the symbol section relative and
  * put it inside the section definition.
  */
+/*
+ * ATTENTION:这个文件里面描述的各种加载规则，都是编译器的一个期望
+ * 真实被加载到那个地址空间哪个地址，是loader决定的
+ * 但是段合并规则，这些是真实由编译器确定的
+ */
 
 #ifdef CONFIG_X86_32
 #define LOAD_OFFSET __PAGE_OFFSET

@@ -53,7 +53,7 @@ endif
 # where to get the "sparse" utility.
 
 ifeq ("$(origin C)", "command line")
-  KBUILD_CHECKSRC = $(C)
+  KBU
 endif
 ifndef KBUILD_CHECKSRC
   KBUILD_CHECKSRC = 0
@@ -77,7 +77,7 @@ endif
 # Use "make O=dir/to/store/output/files/"
 #
 # 2) Set KBUILD_OUTPUT
-# Set the environment variable KBUILD_OUTPUT to point to the directory
+# Set t
 # where the output files shall be placed.
 # export KBUILD_OUTPUT=dir/to/store/output/files/
 # make

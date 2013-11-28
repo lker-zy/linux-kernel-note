@@ -465,6 +465,7 @@ static inline unsigned long pgd_page_vaddr(pgd_t pgd)
 #define pgd_page(pgd)		pfn_to_page(pgd_val(pgd) >> PAGE_SHIFT)
 
 /* to find an entry in a page-table-directory. */
+// 得到PDPT中的index（偏移）   level3 page
 static inline unsigned long pud_index(unsigned long address)
 {
 	return (address >> PUD_SHIFT) & (PTRS_PER_PUD - 1);
@@ -493,6 +494,12 @@ static inline int pgd_none(pgd_t pgd)
  *
  * this macro returns the index of the entry in the pgd page which would
  * control the given virtual address
+ *
+ * in x86-64, PGDIR_SHIFT been set to 39
+ *			  PTRS_PER_PGD been set to 512(每个页目录包含的项)
+ *
+ *	address >> PGDIR_SHIFT 得到PML4及符号扩展位
+ *	& PTRS_PER_PGD后得到在PML4中的偏移(index)
  */
 #define pgd_index(address) (((address) >> PGDIR_SHIFT) & (PTRS_PER_PGD - 1))
 

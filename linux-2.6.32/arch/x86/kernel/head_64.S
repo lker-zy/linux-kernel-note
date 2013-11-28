@@ -34,10 +34,22 @@
 
 #define pud_index(x)	(((x) >> PUD_SHIFT) & (PTRS_PER_PUD-1))
 
-L4_PAGE_OFFSET = pgd_index(__PAGE_OFFSET)
-L3_PAGE_OFFSET = pud_index(__PAGE_OFFSET)
-L4_START_KERNEL = pgd_index(__START_KERNEL_map)
-L3_START_KERNEL = pud_index(__START_KERNEL_map)
+/*
+ * http://www.ibm.com/developerworks/cn/linux/l-lvm64/
+ * PML4最后一项(1 1111 1111)是内核代码地址空间
+ *
+ */
+/*
+ * __PAGE_OFFSET: 0xffff            8800              0000              0000
+ *		binary:   11111111 11111111 10001000 00000000 00000000 00000000 00000000 00000000
+ *
+ * __START_KERNEL_map: 0xffff             ffff              8000              0000
+ * binary:				11111111 11111111 11111111 11111111 10000000 00000000 00000000 00000000
+ */
+L4_PAGE_OFFSET = pgd_index(__PAGE_OFFSET)	/* 1 0001 0000 (b) */
+L3_PAGE_OFFSET = pud_index(__PAGE_OFFSET)	/* 0 0000 0000 (b) */
+L4_START_KERNEL = pgd_index(__START_KERNEL_map)	/* 1 1111 1111 (b) ==  511*/
+L3_START_KERNEL = pud_index(__START_KERNEL_map)	/* 1 1111 1110 (b) ==  510*/
 
 	.text
 	__HEAD
@@ -66,17 +78,34 @@ startup_64:
 	/* Compute the delta between the address I am compiled to run at and the
 	 * address I am actually running at.
 	 */
+
+	/* .text段的起始地址，加载到%rbp中, 实际值*/
 	leaq	_text(%rip), %rbp
+
+	/* $_text是理论预期值，先求得和内核代码空间基址的偏移
+	 * 然后从实际.text的加载地址减去该offset，得到实际加载基地址
+	 *
+	 * 得到的加载地址存储于%rbp中, 保护模式下的加载地址
+	 */
 	subq	$_text - __START_KERNEL_map, %rbp
 
 	/* Is the address not 2M aligned? */
+	/*
+	 * 必须是2M对齐的，因为下面直接将%rbp加载到init_level4_pgt
+	 * 也就是内核的页目录项中
+	 */
 	movq	%rbp, %rax
 	andl	$~PMD_PAGE_MASK, %eax
 	testl	%eax, %eax
 	jnz	bad_address
 
+	// 加载的地址超过了地址空间，目前是48位, 且目前只使用一个PML4 entry
 	/* Is the address too large? */
 	leaq	_text(%rip), %rdx
+	/*
+	 * #define PGDIR_SIZE	(_AC(1, UL) << PGDIR_SHIFT)
+	 *	"1 << 39"
+	 */
 	movq	$PGDIR_SIZE, %rax
 	cmpq	%rax, %rdx
 	jae	bad_address
@@ -84,6 +113,13 @@ startup_64:
 	/* Fixup the physical addresses in the page table
 	 */
 	addq	%rbp, init_level4_pgt + 0(%rip)
+	/*
+	 * L4_PAGE_OFFSET是直接映射的区间的起始地址的PML4的index
+	 * %rbp是一个物理地址，加载到页目录中对应的项
+	 *
+	 * 这些页表，在本文件的最后进行定义，并留出空间(初始化为0)
+	 * 真正的页表赋值在此, 主要是初始化和内核空间相关的页表
+	 */
 	addq	%rbp, init_level4_pgt + (L4_PAGE_OFFSET*8)(%rip)
 	addq	%rbp, init_level4_pgt + (L4_START_KERNEL*8)(%rip)
 
@@ -162,10 +198,12 @@ ENTRY(secondary_startup_64)
 	 */
 
 	/* Enable PAE mode and PGE */
+	// 开启分页
 	movl	$(X86_CR4_PAE | X86_CR4_PGE), %eax
 	movq	%rax, %cr4
 
 	/* Setup early boot stage 4 level pagetables. */
+	// 加载页目录到寄存器
 	movq	$(init_level4_pgt - __START_KERNEL_map), %rax
 	addq	phys_base(%rip), %rax
 	movq	%rax, %cr3
@@ -176,6 +214,7 @@ ENTRY(secondary_startup_64)
 1:
 
 	/* Check if nx is implemented */
+	// 页面读写权限相关的处理器支持
 	movl	$0x80000001, %eax
 	cpuid
 	movl	%edx,%edi
@@ -328,6 +367,7 @@ early_idt_ripmsg:
 #endif /* CONFIG_EARLY_PRINTK */
 	.previous
 
+// PAGE_SIZE : 1 << 12   4k-page
 #define NEXT_PAGE(name) \
 	.balign	PAGE_SIZE; \
 ENTRY(name)
@@ -346,20 +386,39 @@ ENTRY(name)
 	 * 0xffffffff80000000 to physical address 0x000000. (always using
 	 * 2Mbyte large pages provided by PAE mode)
 	 */
+	// .quad bignum1 bignum2 ... 每个bignum都会变成8bytes的整数
 NEXT_PAGE(init_level4_pgt)
+
+	// x64下，LOAD_OFFSET的值被设置为 __START_KERNEL_map
+	// 所以，符号的虚拟地址减去LOAD_OFFSET就得到该符号的物理地址
 	.quad	level3_ident_pgt - __START_KERNEL_map + _KERNPG_TABLE
+
+	/*
+	 * .org 对其之后的变量起作用，所以下面的.org影响的是紧后.quad所描述的成员
+	 * 设置offset 为 272 的PML4 entry  ; offset: 256 + 16
+	 * 为什么 乘以8 呢？ 因为每个entry的大小是64位
+	 */
 	.org	init_level4_pgt + L4_PAGE_OFFSET*8, 0
 	.quad	level3_ident_pgt - __START_KERNEL_map + _KERNPG_TABLE
+
+	/*
+	 * 这一行：
+	 *		将下一个PML4 entry的地址设置为init_level4_pgt + L4_START_KERNEL*8
+	 * why?
+	 *		L4_START_KERNEL == 511,啥意思呢？是说第512各PML4 entry留给内核专用
+	 *		可以观察一下 level3_ident_pgt的内容
+	 */
 	.org	init_level4_pgt + L4_START_KERNEL*8, 0
 	/* (2^48-(2*1024*1024*1024))/(2^39) = 511 */
 	.quad	level3_kernel_pgt - __START_KERNEL_map + _PAGE_TABLE
 
 NEXT_PAGE(level3_ident_pgt)
 	.quad	level2_ident_pgt - __START_KERNEL_map + _KERNPG_TABLE
-	.fill	511,8,0
+	.fill	511,8,0	/* 反复填充511次，填充值为0, 每次填充8bytes */
+					/* 实际意义是只设置了一个PDPE，其余511个清零*/
 
 NEXT_PAGE(level3_kernel_pgt)
-	.fill	L3_START_KERNEL,8,0
+	.fill	L3_START_KERNEL,8,0		// 填充510个PDPE 表项, 剩下两个项明确在下面设置
 	/* (2^48-(2*1024*1024*1024)-((2^39)*511))/(2^30) = 510 */
 	.quad	level2_kernel_pgt - __START_KERNEL_map + _KERNPG_TABLE
 	.quad	level2_fixmap_pgt - __START_KERNEL_map + _PAGE_TABLE
@@ -377,10 +436,10 @@ NEXT_PAGE(level2_ident_pgt)
 	/* Since I easily can, map the first 1G.
 	 * Don't set NX because code runs from these pages.
 	 */
-	PMDS(0, __PAGE_KERNEL_IDENT_LARGE_EXEC, PTRS_PER_PMD)
+	PMDS(0, __PAGE_KERNEL_IDENT_LARGE_EXEC, PTRS_PER_PMD/*512*/)
 
 NEXT_PAGE(level2_kernel_pgt)
-	/*
+	/*	一个PDPE项可映射1G内存, 一个PML4项可映射512G内存
 	 * 512 MB kernel mapping. We spend a full page on this pagetable
 	 * anyway.
 	 *
@@ -391,7 +450,9 @@ NEXT_PAGE(level2_kernel_pgt)
 	 *  too.)
 	 */
 	PMDS(0, __PAGE_KERNEL_LARGE_EXEC,
-		KERNEL_IMAGE_SIZE/PMD_SIZE)
+		KERNEL_IMAGE_SIZE/PMD_SIZE)	// KERNEL_IMAGE_SIZE是最大内核映像size
+									// 除以PMD_SIZE可算出需要多少个PMD项（PDE entrys）
+									// PMD_SIZE = 2^21, 需要256各PMD（PDE）项
 
 NEXT_PAGE(level2_spare_pgt)
 	.fill   512, 8, 0
