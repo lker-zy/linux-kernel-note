@@ -38,6 +38,9 @@
  * the start of the fixmap.
  */
 extern unsigned long __FIXADDR_TOP;
+/*
+unsigned long __FIXADDR_TOP = 0xffff f000;
+*/
 #define FIXADDR_TOP	((unsigned long)__FIXADDR_TOP)
 
 #define FIXADDR_USER_START     __fix_to_virt(FIX_VDSO)

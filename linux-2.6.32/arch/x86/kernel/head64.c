@@ -28,6 +28,7 @@
 
 static void __init zap_identity_mappings(void)
 {
+	// 0号pgd，干掉的是用户空间的pg映射
 	pgd_t *pgd = pgd_offset_k(0UL);
 	pgd_clear(pgd);
 	__flush_tlb_all();
@@ -74,6 +75,7 @@ void __init x86_64_start_kernel(char * real_mode_data)
 	clear_bss();
 
 	/* Make NULL pointers segfault */
+	// 干掉的是用户空间的page
 	zap_identity_mappings();
 
 	/* Cleanup the over mapped high alias */

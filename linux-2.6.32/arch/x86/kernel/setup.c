@@ -729,7 +729,7 @@ void __init setup_arch(char **cmdline_p)
 	/* VMI may relocate the fixmap; do this before touching ioremap area */
 	vmi_init();
 
-	early_cpu_init();
+	early_cpu_init();	// print per-cpu info(vender ident)
 	early_ioremap_init();
 
 	ROOT_DEV = old_decode_dev(boot_params.hdr.root_dev);
@@ -772,11 +772,12 @@ void __init setup_arch(char **cmdline_p)
 	}
 #endif
 
-	x86_init.oem.arch_setup();
+	x86_init.oem.arch_setup();	// noop operation
 
 	setup_memory_map();
 	parse_setup_data();
 	/* update the e820_saved too */
+	// 对setup_data所属的空间进行reserve保护
 	e820_reserve_setup_data();
 
 	copy_edd();
@@ -903,8 +904,9 @@ void __init setup_arch(char **cmdline_p)
 
 	/* How many end-of-memory variables you have, grandma! */
 	/* need this before calling reserve_initrd */
+	// max_pfn是否超过1024×1024个页框，即可用内存是否超过4G
 	if (max_pfn > (1UL<<(32 - PAGE_SHIFT)))
-		max_low_pfn = e820_end_of_low_ram_pfn();
+		max_low_pfn = e820_end_of_low_ram_pfn();	// 1M个页框
 	else
 		max_low_pfn = max_pfn;
 
@@ -924,10 +926,12 @@ void __init setup_arch(char **cmdline_p)
 	init_gbpages();
 
 	/* max_pfn_mapped is updated here */
+	// 建立低端内存页表
 	max_low_pfn_mapped = init_memory_mapping(0, max_low_pfn<<PAGE_SHIFT);
 	max_pfn_mapped = max_low_pfn_mapped;
 
 #ifdef CONFIG_X86_64
+	// 物理内存超过4G
 	if (max_pfn > max_low_pfn) {
 		max_pfn_mapped = init_memory_mapping(1UL<<32,
 						     max_pfn<<PAGE_SHIFT);

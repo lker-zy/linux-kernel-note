@@ -44,14 +44,18 @@ typedef struct { pteval_t pte; } pte_t;
  */
 #define PTRS_PER_PTE	512
 
+// 一个PMD(level2-页表可项可以表达的最大地址范围)
 #define PMD_SIZE	(_AC(1, UL) << PMD_SHIFT)
 #define PMD_MASK	(~(PMD_SIZE - 1))
+// 一个PUD(level3-页表可项可以表达的最大地址范围)
 #define PUD_SIZE	(_AC(1, UL) << PUD_SHIFT)
 #define PUD_MASK	(~(PUD_SIZE - 1))
+// 一个PML4/PGD(level4-页表可项可以表达的最大地址范围)
 #define PGDIR_SIZE	(_AC(1, UL) << PGDIR_SHIFT)
 #define PGDIR_MASK	(~(PGDIR_SIZE - 1))
 
 /* See Documentation/x86/x86_64/mm.txt for a description of the memory map. */
+// arch/x86/include/asm/sparesem.h， MAX_PHYSMEM_BITS == 46
 #define MAXMEM		 _AC(__AC(1, UL) << MAX_PHYSMEM_BITS, UL)
 #define VMALLOC_START    _AC(0xffffc90000000000, UL)
 #define VMALLOC_END      _AC(0xffffe8ffffffffff, UL)

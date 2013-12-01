@@ -144,6 +144,7 @@ void main(void)
 	set_bios_mode();
 
 	/* Detect memory layout */
+	// 主要是e820相关操作
 	detect_memory();
 
 	/* Set keyboard repeat rate (why?) */

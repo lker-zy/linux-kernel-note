@@ -26,12 +26,13 @@
 
 /*
  * Set __PAGE_OFFSET to the most negative possible address +
- * PGDIR_SIZE*16 (pgd slot 272).  The gap is to allow a space for a
+ * PGDIR_SIZE(1 << 39)*16 (pgd slot 272).  The gap is to allow a space for a
  * hypervisor to fit.  Choosing 16 slots here is arbitrary, but it's
  * what Xen requires.
  */
 #define __PAGE_OFFSET           _AC(0xffff880000000000, UL)
 
+// 向上对齐到配置的物理地址起点
 #define __PHYSICAL_START	((CONFIG_PHYSICAL_START +	 	\
 				  (CONFIG_PHYSICAL_ALIGN - 1)) &	\
 				 ~(CONFIG_PHYSICAL_ALIGN - 1))

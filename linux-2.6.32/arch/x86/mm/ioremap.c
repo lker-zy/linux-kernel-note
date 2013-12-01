@@ -435,6 +435,7 @@ void __init early_ioremap_init(void)
 	if (early_ioremap_debug)
 		printk(KERN_INFO "early_ioremap_init()\n");
 
+	// slot_virt中记录的是FIX的线性地址
 	for (i = 0; i < FIX_BTMAPS_SLOTS; i++)
 		slot_virt[i] = __fix_to_virt(FIX_BTMAP_BEGIN - NR_FIX_BTMAPS*i);
 
@@ -445,6 +446,8 @@ void __init early_ioremap_init(void)
 	/*
 	 * The boot-ioremap range spans multiple pmds, for which
 	 * we are not prepared:
+	 * fix的映射 只能有一个PMD页，2M
+	 * 4k * 256(NR_FIX_BTMAPS*FIX_BTMAPS_SLOTS) = 1M
 	 */
 	if (pmd != early_ioremap_pmd(fix_to_virt(FIX_BTMAP_END))) {
 		WARN_ON(1);
@@ -489,6 +492,7 @@ static inline void __init early_set_fixmap(enum fixed_addresses idx,
 					   phys_addr_t phys, pgprot_t prot)
 {
 	if (after_paging_init)
+		// 为idx对应的virt addr，设置pte
 		__set_fixmap(idx, phys, prot);
 	else
 		__early_set_fixmap(idx, phys, prot);
@@ -539,12 +543,15 @@ __early_ioremap(resource_size_t phys_addr, unsigned long size, pgprot_t prot)
 
 	slot = -1;
 	for (i = 0; i < FIX_BTMAPS_SLOTS; i++) {
+		// prev_map[i]当前空闲
+		// 函数末尾对prev_map[i]进行填充,填充的是映射的起始地址
 		if (!prev_map[i]) {
 			slot = i;
 			break;
 		}
 	}
 
+	//not found
 	if (slot < 0) {
 		printk(KERN_INFO "early_iomap(%08llx, %08lx) not found slot\n",
 			 (u64)phys_addr, size);
@@ -559,17 +566,20 @@ __early_ioremap(resource_size_t phys_addr, unsigned long size, pgprot_t prot)
 	}
 
 	/* Don't allow wraparound or zero size */
+	// 防止超出物理地址(可能是设备空间)空间可表示的范围
 	last_addr = phys_addr + size - 1;
 	if (!size || last_addr < phys_addr) {
 		WARN_ON(1);
 		return NULL;
 	}
 
+	// 记录该slot中占用的page大小
 	prev_size[slot] = size;
 	/*
 	 * Mappings have to be page-aligned
 	 */
 	offset = phys_addr & ~PAGE_MASK;
+	// 修正phys_addr到页面对齐
 	phys_addr &= PAGE_MASK;
 	size = PAGE_ALIGN(last_addr + 1) - phys_addr;
 
@@ -596,6 +606,7 @@ __early_ioremap(resource_size_t phys_addr, unsigned long size, pgprot_t prot)
 	if (early_ioremap_debug)
 		printk(KERN_CONT "%08lx + %08lx\n", offset, slot_virt[slot]);
 
+	// slot_virt中记录的是映射的线性基地址
 	prev_map[slot] = (void __iomem *)(offset + slot_virt[slot]);
 	return prev_map[slot];
 }

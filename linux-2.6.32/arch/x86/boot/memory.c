@@ -21,7 +21,7 @@ static int detect_memory_e820(void)
 {
 	int count = 0;
 	struct biosregs ireg, oreg;
-	struct e820entry *desc = boot_params.e820_map;
+	struct e820entry *desc = boot_params.e820_map;	// e820entry的数组
 	static struct e820entry buf; /* static so it is zeroed */
 
 	initregs(&ireg);
@@ -36,7 +36,7 @@ static int detect_memory_e820(void)
 	 * the previous call, and only changes modified fields.  Therefore,
 	 * we use a temporary buffer and copy the results entry by entry.
 	 *
-	 * This routine deliberately does not try to account for
+	 * This routine deliberately(故意的) does not try to account for
 	 * ACPI 3+ extended attributes.  This is because there are
 	 * BIOSes in the field which report zero for the valid bit for
 	 * all ranges, and we don't currently make any use of the
@@ -64,7 +64,7 @@ static int detect_memory_e820(void)
 			break;
 		}
 
-		*desc++ = buf;
+		*desc++ = buf;	// desc是e820entry的数组，此处就是循环填充该数组
 		count++;
 	} while (ireg.ebx && count < ARRAY_SIZE(boot_params.e820_map));
 

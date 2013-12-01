@@ -149,7 +149,7 @@ static unsigned int *kstat_irqs_legacy;
 
 int __init early_irq_init(void)
 {
-	struct irq_desc *desc;
+	struct irq_desc *desc;	// include/linux/irq.h
 	int legacy_count;
 	int node;
 	int i;

@@ -264,7 +264,9 @@ void __init init_extra_mapping_uc(unsigned long phys, unsigned long size)
 void __init cleanup_highmap(void)
 {
 	unsigned long vaddr = __START_KERNEL_map;
+	// PMD_SIZE is 2M
 	unsigned long end = roundup((unsigned long)_end, PMD_SIZE) - 1;
+	// pmd-last_pmd共表示了512各pmd空间，就是一个PUD 1G
 	pmd_t *pmd = level2_kernel_pgt;
 	pmd_t *last_pmd = pmd + PTRS_PER_PMD;
 
@@ -536,6 +538,7 @@ kernel_physical_mapping_init(unsigned long start,
 
 	unsigned long next, last_map_addr = end;
 
+	// 直接映射啊
 	start = (unsigned long)__va(start);
 	end = (unsigned long)__va(end);
 
@@ -549,6 +552,7 @@ kernel_physical_mapping_init(unsigned long start,
 			next = end;
 
 		if (pgd_val(*pgd)) {
+			// 逐级设置PUD、PMD、PTE
 			last_map_addr = phys_pud_update(pgd, __pa(start),
 						 __pa(end), page_size_mask);
 			continue;
@@ -673,6 +677,7 @@ void __init mem_init(void)
 	long codesize, reservedpages, datasize, initsize;
 	unsigned long absent_pages;
 
+	// arxh/x86/kernel/pci-dma.c
 	pci_iommu_alloc();
 
 	/* clear_bss() already clear the empty_zero_page */

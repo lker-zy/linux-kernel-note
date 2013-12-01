@@ -495,6 +495,7 @@ static inline int pgd_none(pgd_t pgd)
  * this macro returns the index of the entry in the pgd page which would
  * control the given virtual address
  *
+ * by lker_zy:
  * in x86-64, PGDIR_SHIFT been set to 39
  *			  PTRS_PER_PGD been set to 512(每个页目录包含的项)
  *
@@ -515,7 +516,7 @@ static inline int pgd_none(pgd_t pgd)
 #define pgd_offset_k(address) pgd_offset(&init_mm, (address))
 
 
-#define KERNEL_PGD_BOUNDARY	pgd_index(PAGE_OFFSET)
+#define KERNEL_PGD_BOUNDARY	pgd_index(PAGE_OFFSET)	// PAGE_OFFSET就是__PAGE_OFFSET的值
 #define KERNEL_PGD_PTRS		(PTRS_PER_PGD - KERNEL_PGD_BOUNDARY)
 
 #ifndef __ASSEMBLY__

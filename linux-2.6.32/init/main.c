@@ -547,11 +547,13 @@ asmlinkage void __init start_kernel(void)
  * enable them
  */
 	lock_kernel();
+	// kernel/time/tick-common.c:412
+	// registe clockevents notifier chain
 	tick_init();
 	boot_cpu_init();
-	page_address_init();
+	page_address_init();	// mm/highmem.c : 409
 	printk(KERN_NOTICE "%s", linux_banner);
-	setup_arch(&command_line);
+	setup_arch(&command_line);	// arch/x86/kernel/setup.c
 	mm_init_owner(&init_mm, &init_task);
 	setup_command_line(command_line);
 	setup_nr_cpu_ids();
@@ -573,7 +575,7 @@ asmlinkage void __init start_kernel(void)
 	pidhash_init();
 	vfs_caches_init_early();
 	sort_main_extable();
-	trap_init();
+	trap_init();	// arch/x86/kernel/traps.c
 	mm_init();
 	/*
 	 * Set up the scheduler prior starting any interrupts (such as the

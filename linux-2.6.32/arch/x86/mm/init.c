@@ -34,6 +34,7 @@ static void __init find_early_table_space(unsigned long end, int use_pse,
 	unsigned long puds, pmds, ptes, tables, start;
 
 	puds = (end + PUD_SIZE - 1) >> PUD_SHIFT;
+	// 取得设置所有pud所需的pages
 	tables = roundup(puds * sizeof(pud_t), PAGE_SIZE);
 
 	if (use_gbpages) {
@@ -103,11 +104,23 @@ static int __meminit save_mr(struct map_range *mr, int nr_range,
 			     unsigned long start_pfn, unsigned long end_pfn,
 			     unsigned long page_size_mask)
 {
+
 	if (start_pfn < end_pfn) {
 		if (nr_range >= NR_RANGE_MR)
 			panic("run out of range for init_memory_mapping\n");
 		mr[nr_range].start = start_pfn<<PAGE_SHIFT;
 		mr[nr_range].end   = end_pfn<<PAGE_SHIFT;
+		/*
+		enum {
+			PG_LEVEL_NONE,
+			PG_LEVEL_4K,
+			PG_LEVEL_2M,
+			PG_LEVEL_1G,
+			PG_LEVEL_NUM
+		};
+
+		page_size_mask标识是哪种类型的页面尺寸
+		*/
 		mr[nr_range].page_size_mask = page_size_mask;
 		nr_range++;
 	}
@@ -119,6 +132,7 @@ static int __meminit save_mr(struct map_range *mr, int nr_range,
  * Setup the direct mapping of the physical memory at PAGE_OFFSET.
  * This runs before bootmem is initialized and gets pages directly from
  * the physical memory. To access them they are temporarily mapped.
+ *
  */
 unsigned long __init_refok init_memory_mapping(unsigned long start,
 					       unsigned long end)
@@ -184,6 +198,14 @@ unsigned long __init_refok init_memory_mapping(unsigned long start,
 		end_pfn = ((pos + (PMD_SIZE - 1))>>PMD_SHIFT)
 				 << (PMD_SHIFT - PAGE_SHIFT);
 #else /* CONFIG_X86_64 */
+	/*
+	 * PMD_SIZE = 1 << PMD_SHIFT(21) == 2^21 = 2M
+	 * (pos + (PMD_SIZE-1) ) >> PMD_SHIFT得到其下一PMD页的PMD MASK
+	 * 再 << (PMD_SHIFT -  PAGE_SHIFT)得到这个PMD项的第一个PTE页的基址
+	 *	也就是其页框号
+	 * 
+	 * 综上所述，就是获取到本PMD的最后一个地址的地址空间,其页框范围
+	 */
 	end_pfn = ((pos + (PMD_SIZE - 1)) >> PMD_SHIFT)
 			<< (PMD_SHIFT - PAGE_SHIFT);
 #endif
@@ -213,6 +235,7 @@ unsigned long __init_refok init_memory_mapping(unsigned long start,
 	}
 
 #ifdef CONFIG_X86_64
+	// 只有x86-64支持1G的页面大小
 	/* big page (1G) range */
 	start_pfn = ((pos + (PUD_SIZE - 1))>>PUD_SHIFT)
 			 << (PUD_SHIFT - PAGE_SHIFT);
@@ -267,6 +290,11 @@ unsigned long __init_refok init_memory_mapping(unsigned long start,
 	 * memory mapped. Unfortunately this is done currently before the
 	 * nodes are discovered.
 	 */
+	// 寻找可装下这些页表的物理内存空间,结果保存在这几个全局变量中
+	// e820_table_start 
+	// e820_table_end 
+	// e820_table_top 
+
 	if (!after_bootmem)
 		find_early_table_space(end, use_pse, use_gbpages);
 
@@ -277,6 +305,8 @@ unsigned long __init_refok init_memory_mapping(unsigned long start,
 	ret = end;
 #else /* CONFIG_X86_64 */
 	for (i = 0; i < nr_range; i++)
+		// 从PML4开始，逐级更新PUD、PMD、PTE
+		// PML4 PUD PMD PTE的内存来自于find_early_table_space
 		ret = kernel_physical_mapping_init(mr[i].start, mr[i].end,
 						   mr[i].page_size_mask);
 #endif

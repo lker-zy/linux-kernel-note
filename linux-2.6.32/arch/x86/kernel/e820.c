@@ -156,6 +156,9 @@ static void __init e820_print_type(u32 type)
 	}
 }
 
+/*
+ * 打印系统的内存布局
+ */
 void __init e820_print_map(char *who)
 {
 	int i;
@@ -1102,7 +1105,7 @@ u64 __init early_reserve_e820(u64 startt, u64 sizet, u64 align)
 #  define MAX_ARCH_PFN		(1ULL<<(32-PAGE_SHIFT))
 # endif
 #else /* CONFIG_X86_32 */
-# define MAX_ARCH_PFN MAXMEM>>PAGE_SHIFT
+# define MAX_ARCH_PFN MAXMEM>>PAGE_SHIFT	/* 2^46 */
 #endif
 
 /*
@@ -1144,6 +1147,7 @@ static unsigned long __init e820_end_pfn(unsigned long limit_pfn, unsigned type)
 }
 unsigned long __init e820_end_of_ram_pfn(void)
 {
+	/* in x86-64 : MAX_ARCH_PFN = 2^46 */
 	return e820_end_pfn(MAX_ARCH_PFN, E820_RAM);
 }
 
@@ -1434,10 +1438,15 @@ char *__init default_machine_specific_memory_setup(void)
 	 * the next section from 1mb->appropriate_mem_k
 	 */
 	new_nr = boot_params.e820_entries;
+	//santitize_e820_map的作用就是对指定e820结构中内存区域进行排序合并以保证其中没有重复和重叠的内存区域
+	//这里boot_params.e820_map就是我们在实模式中调用BIOS e820的服务而获得的BIOS和硬件所使用的内存区域。
 	sanitize_e820_map(boot_params.e820_map,
 			ARRAY_SIZE(boot_params.e820_map),
 			&new_nr);
 	boot_params.e820_entries = new_nr;
+	//append_e820_map的作用是将指定的e820结构的内存区域合并到全局e820中去
+	//返回小于0代表boot_params.e820_map中没有可以合并的内容也就是说BIOS e820调用显然错误了
+	//此时全局e820是空的
 	if (append_e820_map(boot_params.e820_map, boot_params.e820_entries)
 	  < 0) {
 		u64 mem_size;
