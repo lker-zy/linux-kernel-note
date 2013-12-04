@@ -34,6 +34,11 @@ MAKEFLAGS += -rR --no-print-directory
 
 # To put more focus on warnings, be less verbose as default
 # Use 'make V=1' to see the full commands
+#
+
+
+# origin is a function to find the origin of the var
+# 	origin list: command line\environment\file .etc
 
 ifeq ("$(origin V)", "command line")
   KBUILD_VERBOSE = $(V)
@@ -53,7 +58,7 @@ endif
 # where to get the "sparse" utility.
 
 ifeq ("$(origin C)", "command line")
-  KBU
+  KBUILD_CHECKSRC = $(C)
 endif
 ifndef KBUILD_CHECKSRC
   KBUILD_CHECKSRC = 0
@@ -67,7 +72,7 @@ ifdef SUBDIRS
 endif
 
 ifeq ("$(origin M)", "command line")
-  KBUILD_EXTMOD := $(M)
+  KBUILD_EXTMOD := $(M)	# 用$(M)覆盖默认值 $(SUBDIRS) = $(PWD)
 endif
 
 # kbuild supports saving output files in a separate directory.
@@ -108,6 +113,8 @@ ifneq ($(KBUILD_OUTPUT),)
 # check that the output directory actually exists
 saved-output := $(KBUILD_OUTPUT)
 KBUILD_OUTPUT := $(shell cd $(KBUILD_OUTPUT) && /bin/pwd)
+# if KBUILD_OUTPUT 为空，什么也不做，否则，执行error output
+# if condition, do_true_thing , do_false_thing
 $(if $(KBUILD_OUTPUT),, \
      $(error output directory "$(saved-output)" does not exist))
 
