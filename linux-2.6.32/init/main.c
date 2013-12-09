@@ -511,7 +511,7 @@ static void __init mm_init(void)
 	 * and it's bigger than MAX_ORDER unless SPARSEMEM.
 	 */
 	page_cgroup_init_flatmem();
-	mem_init();
+	mem_init();	// arch/x86/mm/init_64.c
 	kmem_cache_init();
 	pgtable_cache_init();
 	vmalloc_init();

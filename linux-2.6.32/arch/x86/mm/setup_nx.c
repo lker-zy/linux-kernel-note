@@ -62,6 +62,7 @@ void __cpuinit check_efer(void)
 	unsigned long efer;
 
 	rdmsrl(MSR_EFER, efer);
+	// 不支持NX, 屏蔽掉相关特性mask
 	if (!(efer & EFER_NX) || disable_nx)
 		__supported_pte_mask &= ~_PAGE_NX;
 }

@@ -409,10 +409,13 @@ early_param("early_ioremap_debug", early_ioremap_debug_setup);
 static __initdata int after_paging_init;
 static pte_t bm_pte[PAGE_SIZE/sizeof(pte_t)] __page_aligned_bss;
 
+// addr 是虚拟地址
 static inline pmd_t * __init early_ioremap_pmd(unsigned long addr)
 {
 	/* Don't assume we're using swapper_pg_dir at this point */
+	// 获取页表基址寄存器的内容，转化为vaddr
 	pgd_t *base = __va(read_cr3());
+	// pgd_index获取pgd 偏移， 通过base+offset 获取pud 基址
 	pgd_t *pgd = &base[pgd_index(addr)];
 	pud_t *pud = pud_offset(pgd, addr);
 	pmd_t *pmd = pmd_offset(pud, addr);
@@ -440,6 +443,8 @@ void __init early_ioremap_init(void)
 		slot_virt[i] = __fix_to_virt(FIX_BTMAP_BEGIN - NR_FIX_BTMAPS*i);
 
 	pmd = early_ioremap_pmd(fix_to_virt(FIX_BTMAP_BEGIN));
+	// static pte_t bm_pte[PAGE_SIZE/sizeof(pte_t)] __page_aligned_bss;
+	// pm_pte占一页空间大小，共512项(64-bits)，一个pmd表示的所有空间范围
 	memset(bm_pte, 0, sizeof(bm_pte));
 	pmd_populate_kernel(&init_mm, pmd, bm_pte);
 

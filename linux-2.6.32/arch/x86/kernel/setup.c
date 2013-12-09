@@ -428,6 +428,8 @@ static void __init parse_setup_data(void)
 		data = early_memremap(pa_data, PAGE_SIZE);
 		switch (data->type) {
 		case SETUP_E820_EXT:
+			// 将e820 ext发现的ext区域append到e820
+			// 再次调用sanitize_e820_map进行整理
 			parse_e820_ext(data, pa_data);
 			break;
 		default:
@@ -603,6 +605,13 @@ void __init reserve_standard_io_resources(void)
 	int i;
 
 	/* request I/O space for devices used on all i[345]86 PCs */
+	// standrd_io_resources是要注册的资源
+	// ioport_resource是资源树根，描述的地址范围大于等于standard_io_resources
+	/*
+	 * http://blog.csdn.net/ce123_zhouwei/article/details/7204458
+	 * http://blog.csdn.net/acs713/article/details/7911025
+	 * 参考：陈莉君 的博客-驱动开发中的I/O地址空间
+	 */
 	for (i = 0; i < ARRAY_SIZE(standard_io_resources); i++)
 		request_resource(&ioport_resource, &standard_io_resources[i]);
 
@@ -774,9 +783,10 @@ void __init setup_arch(char **cmdline_p)
 
 	x86_init.oem.arch_setup();	// noop operation
 
-	setup_memory_map();
-	parse_setup_data();
+	setup_memory_map();	// 整理e820的结果
+	parse_setup_data();	// 处理e820 ext发现的内存拓扑并整理
 	/* update the e820_saved too */
+
 	// 对setup_data所属的空间进行reserve保护
 	e820_reserve_setup_data();
 
@@ -819,6 +829,8 @@ void __init setup_arch(char **cmdline_p)
 	 * call set_fixmap(), and then again after parsing early parameters to
 	 * honor the respective command line option.
 	 */
+	// 读取MSR寄存器，确定是否支持NX feature
+	// MSR 总体来是为了设置CPU 的工作环境和标示CPU 的工作状态，包括温度控制，性能监控等
 	check_efer();
 #endif
 
@@ -832,6 +844,11 @@ void __init setup_arch(char **cmdline_p)
 	vmi_activate();
 
 	/* after early param, so could get panic from serial */
+	/*
+	 *	e820_reserve_setup_data(); 做了类似操作，但是它是针对e820 map的区段属性设置
+	 *	
+	 *	reserve_early_setup_data是针对struct early_res early_res
+	 */
 	reserve_early_setup_data();
 
 	if (acpi_mps_check()) {
@@ -885,6 +902,9 @@ void __init setup_arch(char **cmdline_p)
 	 * partially used pages are not usable - thus
 	 * we are rounding upwards:
 	 */
+	// 最大4G in x86_64
+	//	   16M in PAE
+	//	   1M in x86_32 with no PAE
 	max_pfn = e820_end_of_ram_pfn();
 
 	/* preallocate 4k for mptable mpc */
@@ -900,18 +920,23 @@ void __init setup_arch(char **cmdline_p)
 #else
 	num_physpages = max_pfn;
 
+	// apic : 高级可编程中断控制器
+	// acpi : 高级配置及电源管理
 	check_x2apic();
 
 	/* How many end-of-memory variables you have, grandma! */
 	/* need this before calling reserve_initrd */
 	// max_pfn是否超过1024×1024个页框，即可用内存是否超过4G
 	if (max_pfn > (1UL<<(32 - PAGE_SHIFT)))
-		max_low_pfn = e820_end_of_low_ram_pfn();	// 1M个页框
+		max_low_pfn = e820_end_of_low_ram_pfn();	// 1M个页框 4G空间
 	else
 		max_low_pfn = max_pfn;
 
+	// 为什么要先+1呢?
+	// 如果不-1,则可能__va的参数已经不在直接映射的范围之内了
+	// 先-1,确保在__va的可处理范围，然后映射得到物理地址之后在+1
 	high_memory = (void *)__va(max_pfn * PAGE_SIZE - 1) + 1;
-	max_pfn_mapped = KERNEL_IMAGE_SIZE >> PAGE_SHIFT;
+	max_pfn_mapped = KERNEL_IMAGE_SIZE >> PAGE_SHIFT;	// 512M  >> 12
 #endif
 
 #ifdef CONFIG_X86_CHECK_BIOS_CORRUPTION
@@ -923,10 +948,11 @@ void __init setup_arch(char **cmdline_p)
 
 	reserve_brk();
 
+	// 1 GB per page
 	init_gbpages();
 
 	/* max_pfn_mapped is updated here */
-	// 建立低端内存页表
+	// 建立低端内存页表, 建立的是直接映射的内存区域页表
 	max_low_pfn_mapped = init_memory_mapping(0, max_low_pfn<<PAGE_SHIFT);
 	max_pfn_mapped = max_low_pfn_mapped;
 
@@ -965,6 +991,8 @@ void __init setup_arch(char **cmdline_p)
 #ifdef CONFIG_ACPI_NUMA
 	/*
 	 * Parse SRAT to discover nodes.
+	 * 通过ACPI 配置去list所有的CPU 和内存 节点，包括邻居关系
+	 * 为SLIT配置数据设置内存页面RESERVER
 	 */
 	acpi_numa_init();
 #endif
@@ -1045,6 +1073,7 @@ void __init setup_arch(char **cmdline_p)
 	e820_reserve_resources();
 	e820_mark_nosave_regions(max_low_pfn);
 
+	// 请求io地址空间映射资源
 	x86_init.resources.reserve_resources();
 
 	e820_setup_gap();

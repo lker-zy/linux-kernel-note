@@ -28,6 +28,7 @@ struct x86_init_ops x86_init __initdata = {
 	.resources = {
 		.probe_roms		= x86_init_noop,
 		.reserve_resources	= reserve_standard_io_resources,
+		// 主要是将e820 指令发现内存拓扑进行排序去重修
 		.memory_setup		= default_machine_specific_memory_setup,
 	},
 

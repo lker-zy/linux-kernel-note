@@ -28,12 +28,15 @@ int acpi_numa __initdata;
 static struct acpi_table_slit *acpi_slit;
 
 static nodemask_t nodes_parsed __initdata;
+// cpu的掩码
 static nodemask_t cpu_nodes_parsed __initdata;
 static struct bootnode nodes[MAX_NUMNODES] __initdata;
 static struct bootnode nodes_add[MAX_NUMNODES];
 
 static int num_node_memblks __initdata;
+//内存块的数组
 static struct bootnode node_memblk_range[NR_NODE_MEMBLKS] __initdata;
+// 内存块到node的映射
 static int memblk_nodeid[NR_NODE_MEMBLKS] __initdata;
 
 static __init int setup_node(int pxm)
@@ -44,12 +47,16 @@ static __init int setup_node(int pxm)
 static __init int conflicting_memblks(unsigned long start, unsigned long end)
 {
 	int i;
+	// node_memblk_range在哪儿被设置呢?
+	// acpi_numa_memory_affinity_init的最后
 	for (i = 0; i < num_node_memblks; i++) {
 		struct bootnode *nd = &node_memblk_range[i];
 		if (nd->start == nd->end)
 			continue;
+		// 这种情况，肯定有重叠区域
 		if (nd->end > start && nd->start < end)
 			return memblk_nodeid[i];
+		// 这个不是有点儿多余么
 		if (nd->end == end && nd->start == start)
 			return memblk_nodeid[i];
 	}
@@ -156,6 +163,7 @@ acpi_numa_processor_affinity_init(struct acpi_srat_cpu_affinity *pa)
 	if ((pa->flags & ACPI_SRAT_CPU_ENABLED) == 0)
 		return;
 	pxm = pa->proximity_domain_lo;
+	// 设置 pxm -> nodeid , nodeid -> pxm的关联
 	node = setup_node(pxm);
 	if (node < 0) {
 		printk(KERN_ERR "SRAT: Too many proximity domains %x\n", pxm);
@@ -168,6 +176,7 @@ acpi_numa_processor_affinity_init(struct acpi_srat_cpu_affinity *pa)
 	else
 		apic_id = pa->apic_id;
 	apicid_to_node[apic_id] = node;
+	// 设置 node 在cpu_nodes_parsed中的掩码位
 	node_set(node, cpu_nodes_parsed);
 	acpi_numa = 1;
 	printk(KERN_INFO "SRAT: PXM %u -> APIC %u -> Node %u\n",
@@ -195,7 +204,7 @@ update_nodes_add(int node, unsigned long start, unsigned long end)
 	   the boot. Be very strict here and reject anything unexpected.
 	   If you want working memory hotadd write correct SRATs.
 
-	   The node size check is a basic sanity check to guard against
+	   The node size check is a basic sanity（神志正常) check to guard against
 	   mistakes */
 	if ((signed long)(end - start) < NODE_MIN_SIZE) {
 		printk(KERN_ERR "SRAT: Hotplug area too small\n");
@@ -258,13 +267,14 @@ acpi_numa_memory_affinity_init(struct acpi_srat_mem_affinity *ma)
 		return;
 	start = ma->base_address;
 	end = start + ma->length;
-	pxm = ma->proximity_domain;
+	pxm = ma->proximity_domain;// 邻居节点
 	node = setup_node(pxm);
 	if (node < 0) {
 		printk(KERN_ERR "SRAT: Too many proximity domains.\n");
 		bad_srat();
 		return;
 	}
+	// 找出互有交集的memblk
 	i = conflicting_memblks(start, end);
 	if (i == node) {
 		printk(KERN_WARNING
@@ -284,6 +294,7 @@ acpi_numa_memory_affinity_init(struct acpi_srat_mem_affinity *ma)
 		nd->start = start;
 		nd->end = end;
 	} else {
+		// 重新设置该bootnode的内存范围
 		if (start < nd->start)
 			nd->start = start;
 		if (nd->end < end)
@@ -292,6 +303,7 @@ acpi_numa_memory_affinity_init(struct acpi_srat_mem_affinity *ma)
 
 	printk(KERN_INFO "SRAT: Node %u PXM %u %lx-%lx\n", node, pxm,
 	       start, end);
+	// 设置early_node_map
 	e820_register_active_regions(node, start >> PAGE_SHIFT,
 				     end >> PAGE_SHIFT);
 
@@ -317,17 +329,27 @@ static int __init nodes_cover_memory(const struct bootnode *nodes)
 	unsigned long pxmram, e820ram;
 
 	pxmram = 0;
+	// nodes_parsed是个掩码位图，记录了系统中有哪些nodes
+	// 而nodes是实际的node数组
+	// for_each_node_mask遍历nodes_parsed，依次返回可用node的index
 	for_each_node_mask(i, nodes_parsed) {
 		unsigned long s = nodes[i].start >> PAGE_SHIFT;
 		unsigned long e = nodes[i].end >> PAGE_SHIFT;
 		pxmram += e - s;
+		// absent: 缺席的，不在场的
+		// absent_pages_in_range, return i = 0
+		// absent_pages_in_range 计算s和e之间所有的内存空洞
+		// 所谓的内存空洞，是根据early_node_map中登记的各个node的起始地址计算的
+		// 也就是说node的内存是不连续的
 		pxmram -= absent_pages_in_range(s, e);
 		if ((long)pxmram < 0)
 			pxmram = 0;
 	}
+	// pxmram是通过acpi的numa相关table查找出来的内存
 
 	e820ram = max_pfn - (e820_hole_size(0, max_pfn<<PAGE_SHIFT)>>PAGE_SHIFT);
 	/* We seem to lose 3 pages somewhere. Allow 1M of slack. */
+	// 理论和实际差距超过2 ^ 8个页框，有异常咯	1M
 	if ((long)(e820ram - pxmram) >= (1<<(20 - PAGE_SHIFT))) {
 		printk(KERN_ERR
 	"SRAT: PXMs only cover %luMB of your %luMB e820 RAM. Not used.\n",
@@ -352,11 +374,15 @@ int __init acpi_scan_nodes(unsigned long start, unsigned long end)
 	for (i = 0; i < MAX_NUMNODES; i++)
 		cutoff_node(i, start, end);
 
+	// nodes 是 系统中所有的node ， bootnode的数组
+	// 统计nodes中扫描到的页面数量，和通过e820侦测到的页面进行比较
+	// 如果差距超过1M的内存大小，则返回0
 	if (!nodes_cover_memory(nodes)) {
 		bad_srat();
 		return -1;
 	}
 
+	// TODO
 	memnode_shift = compute_hash_shift(node_memblk_range, num_node_memblks,
 					   memblk_nodeid);
 	if (memnode_shift < 0) {
@@ -367,9 +393,12 @@ int __init acpi_scan_nodes(unsigned long start, unsigned long end)
 	}
 
 	/* Account for nodes with cpus and no memory */
+	// nodes_parsed: memory related
+	// cpu_nodes_parsed : cpu related
 	nodes_or(node_possible_map, nodes_parsed, cpu_nodes_parsed);
 
 	/* Finally register nodes */
+	// 配置node，设置启动内存分配器
 	for_each_node_mask(i, node_possible_map)
 		setup_node_bootmem(i, nodes[i].start, nodes[i].end);
 	/* Try again in case setup_node_bootmem missed one due
@@ -379,6 +408,7 @@ int __init acpi_scan_nodes(unsigned long start, unsigned long end)
 			setup_node_bootmem(i, nodes[i].start, nodes[i].end);
 
 	for (i = 0; i < nr_cpu_ids; i++) {
+		// 获取cpu对应的内存访问节点, 这个最初在哪儿设置的呢
 		int node = early_cpu_to_node(i);
 
 		if (node == NUMA_NO_NODE)
@@ -386,6 +416,7 @@ int __init acpi_scan_nodes(unsigned long start, unsigned long end)
 		if (!node_online(node))
 			numa_clear_node(i);
 	}
+	// 不保证local和邻居节点特性的设置cpu和node的绑定
 	numa_init_array();
 	return 0;
 }

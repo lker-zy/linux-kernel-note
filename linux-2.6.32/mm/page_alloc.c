@@ -148,6 +148,7 @@ static unsigned long __meminitdata dma_reserve;
     #endif
   #endif
 
+// 在发掘NUMA的ACPI配置时， 调用acpi_numa_memory_affinity_init时被设置
   static struct node_active_region __meminitdata early_node_map[MAX_ACTIVE_REGIONS];
   static int __meminitdata nr_nodemap_entries;
   static unsigned long __meminitdata arch_zone_lowest_possible_pfn[MAX_NR_ZONES];
@@ -2576,6 +2577,7 @@ static int default_zonelist_order(void)
 	/* Is there ZONE_NORMAL ? (ex. ppc has only DMA zone..) */
 	low_kmem_size = 0;
 	total_size = 0;
+	// for_each_online_node()遍历所有在线节点
 	for_each_online_node(nid) {
 		for (zone_type = 0; zone_type < MAX_NR_ZONES; zone_type++) {
 			z = &NODE_DATA(nid)->node_zones[zone_type];
@@ -3422,9 +3424,11 @@ void __init free_bootmem_with_active_regions(int nid,
 	int i;
 
 	for_each_active_range_index_in_nid(i, nid) {
+		// 返回的是nodeid为nid的所有node_active_region中的第一个
 		unsigned long size_pages = 0;
 		unsigned long end_pfn = early_node_map[i].end_pfn;
 
+		// 页框范围不匹配
 		if (early_node_map[i].start_pfn >= max_low_pfn)
 			continue;
 
@@ -3432,6 +3436,7 @@ void __init free_bootmem_with_active_regions(int nid,
 			end_pfn = max_low_pfn;
 
 		size_pages = end_pfn - early_node_map[i].start_pfn;
+		// 标记范围内的页面为可用(可分配)
 		free_bootmem_node(NODE_DATA(early_node_map[i].nid),
 				PFN_PHYS(early_node_map[i].start_pfn),
 				size_pages << PAGE_SHIFT);
@@ -3596,6 +3601,7 @@ static unsigned long __meminit __absent_pages_in_range(int nid,
 	unsigned long start_pfn;
 
 	/* Find the end_pfn of the first active range of pfns in the node */
+	// nid == MAX_NUMANODES, return i = 0
 	i = first_active_region_index_in_nid(nid);
 	if (i == -1)
 		return 0;
@@ -3995,6 +4001,7 @@ void __init add_active_range(unsigned int nid, unsigned long start_pfn,
 			return;
 
 		/* Merge forward if suitable */
+		// 为什么两种merge方向，只选一个呢?
 		if (start_pfn <= early_node_map[i].end_pfn &&
 				end_pfn > early_node_map[i].end_pfn) {
 			early_node_map[i].end_pfn = end_pfn;

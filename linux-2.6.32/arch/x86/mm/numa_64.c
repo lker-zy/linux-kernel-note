@@ -167,7 +167,7 @@ static void * __init early_node_mem(int nodeid, unsigned long start,
 	void *ptr;
 
 	if (mem != -1L)
-		return __va(mem);
+		return __va(mem);	// 返回虚拟地址
 
 	ptr = __alloc_bootmem_nopanic(size, align, __pa(MAX_DMA_ADDRESS));
 	if (ptr == NULL) {
@@ -206,6 +206,7 @@ setup_node_bootmem(int nodeid, unsigned long start, unsigned long end)
 	start_pfn = start >> PAGE_SHIFT;
 	last_pfn = end >> PAGE_SHIFT;
 
+	// early_node_mem返回的是虚拟地址
 	node_data[nodeid] = early_node_mem(nodeid, start, end, pgdat_size,
 					   SMP_CACHE_BYTES);
 	if (node_data[nodeid] == NULL)
@@ -226,7 +227,9 @@ setup_node_bootmem(int nodeid, unsigned long start, unsigned long end)
 	 * early_node_mem will get that with find_e820_area instead
 	 * of alloc_bootmem, that could clash with reserved range
 	 */
+	// 描述所有物理内存所需的页框管理信息结构所需的空间
 	bootmap_pages = bootmem_bootmap_pages(last_pfn - start_pfn);
+	// pg_data_t 结构所在的nid
 	nid = phys_to_nid(nodedata_phys);
 	if (nid == nodeid)
 		bootmap_start = roundup(nodedata_phys + pgdat_size, PAGE_SIZE);
@@ -246,6 +249,7 @@ setup_node_bootmem(int nodeid, unsigned long start, unsigned long end)
 	}
 	bootmap_start = __pa(bootmap);
 
+	// 建立页框管理信息
 	bootmap_size = init_bootmem_node(NODE_DATA(nodeid),
 					 bootmap_start >> PAGE_SHIFT,
 					 start_pfn, last_pfn);
@@ -254,6 +258,7 @@ setup_node_bootmem(int nodeid, unsigned long start, unsigned long end)
 		 bootmap_start, bootmap_start + bootmap_size - 1,
 		 bootmap_pages);
 
+	// 标记范围内的页面为可用(可分配)
 	free_bootmem_with_active_regions(nodeid, end);
 
 	/*
@@ -261,6 +266,7 @@ setup_node_bootmem(int nodeid, unsigned long start, unsigned long end)
 	 * otherwise early_node_mem could use early reserved mem
 	 * on previous node
 	 */
+	// TODO
 	early_res_to_bootmem(start, end);
 
 	/*
@@ -270,12 +276,15 @@ setup_node_bootmem(int nodeid, unsigned long start, unsigned long end)
 	if (nid != nodeid)
 		printk(KERN_INFO "    NODE_DATA(%d) on node %d\n", nodeid, nid);
 	else
+		// 将node的管理区pg_data_t进行保留处理
+		// 从nodedata_phys开始的sizeof(pg_data_t) 个 字节
 		reserve_bootmem_node(NODE_DATA(nodeid), nodedata_phys,
 					pgdat_size, BOOTMEM_DEFAULT);
 	nid = phys_to_nid(bootmap_start);
 	if (nid != nodeid)
 		printk(KERN_INFO "    bootmap(%d) on node %d\n", nodeid, nid);
 	else
+		// 对 页框管理信息 所用的页面保留处理
 		reserve_bootmem_node(NODE_DATA(nodeid), bootmap_start,
 				 bootmap_pages<<PAGE_SHIFT, BOOTMEM_DEFAULT);
 
@@ -295,8 +304,15 @@ void __init numa_init_array(void)
 
 	rr = first_node(node_online_map);
 	for (i = 0; i < nr_cpu_ids; i++) {
+		// 已经设置, continue
 		if (early_cpu_to_node(i) != NUMA_NO_NODE)
 			continue;
+		// 替你设置, cpu index  和 node同时递增, node可循环使用
+		// 也就是多个cpu绑定到同一个node
+		// 但是这种设置不保证local和邻居特性
+		//
+		// 要不就是early_per_cpu_ptr_early_ptr数组
+		// 要不就是设置在per_cpu变量中
 		numa_set_node(i, rr);
 		rr = next_node(rr, node_online_map);
 		if (rr == MAX_NUMNODES)
@@ -528,7 +544,10 @@ void __init initmem_init(unsigned long start_pfn, unsigned long last_pfn)
 {
 	int i;
 
+	// node_possible_map是一个 nodemask_t 变量
+	// node_status 数组中的第一项
 	nodes_clear(node_possible_map);
+	// node_online_map 同理
 	nodes_clear(node_online_map);
 
 #ifdef CONFIG_NUMA_EMU
@@ -556,6 +575,7 @@ void __init initmem_init(unsigned long start_pfn, unsigned long last_pfn)
 	printk(KERN_INFO "%s\n",
 	       numa_off ? "NUMA turned off" : "No NUMA configuration found");
 
+	// 伪造一个节点吧
 	printk(KERN_INFO "Faking a node at %016lx-%016lx\n",
 	       start_pfn << PAGE_SHIFT,
 	       last_pfn << PAGE_SHIFT);

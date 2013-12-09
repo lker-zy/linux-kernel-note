@@ -52,6 +52,7 @@ early_param("bootmem_debug", bootmem_debug_setup);
 			__func__, ## args);		\
 })
 
+// 计算描述pages个页帧需要多少个bytes的位图数据结构
 static unsigned long __init bootmap_bytes(unsigned long pages)
 {
 	unsigned long bytes = (pages + 7) / 8;
@@ -63,6 +64,7 @@ static unsigned long __init bootmap_bytes(unsigned long pages)
  * bootmem_bootmap_pages - calculate bitmap size in pages
  * @pages: number of pages the bitmap has to represent
  */
+// 计算描述pages个页帧需要多少个物理页面
 unsigned long __init bootmem_bootmap_pages(unsigned long pages)
 {
 	unsigned long bytes = bootmap_bytes(pages);
@@ -96,17 +98,20 @@ static unsigned long __init init_bootmem_core(bootmem_data_t *bdata,
 	unsigned long mapsize;
 
 	mminit_validate_memmodel_limits(&start, &end);
+	// 页框起始地址的线性地址
 	bdata->node_bootmem_map = phys_to_virt(PFN_PHYS(mapstart));
 	bdata->node_min_pfn = start;
 	bdata->node_low_pfn = end;
-	link_bootmem(bdata);
+	link_bootmem(bdata);	// 将bdata插入到bata_list中去，按照node_min_pfn排序
 
+	////////////////////////////////////////////////////////////
 	/*
 	 * Initially all pages are reserved - setup_arch() has to
 	 * register free RAM areas explicitly.
 	 */
 	mapsize = bootmap_bytes(end - start);
 	memset(bdata->node_bootmem_map, 0xff, mapsize);
+	///////////////////////////////////////////////////////////
 
 	bdebug("nid=%td start=%lx map=%lx end=%lx mapsize=%lx\n",
 		bdata - bootmem_node_data, start, mapstart, end, mapsize);
@@ -127,6 +132,7 @@ unsigned long __init init_bootmem_node(pg_data_t *pgdat, unsigned long freepfn,
 				unsigned long startpfn, unsigned long endpfn)
 {
 	return init_bootmem_core(pgdat->bdata, freepfn, startpfn, endpfn);
+	// 建立页框到page的映射
 }
 
 /**

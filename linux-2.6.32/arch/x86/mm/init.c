@@ -38,6 +38,7 @@ static void __init find_early_table_space(unsigned long end, int use_pse,
 	tables = roundup(puds * sizeof(pud_t), PAGE_SIZE);
 
 	if (use_gbpages) {
+		// 如果 use_gbpages == true, 就不需要PMD页表了
 		unsigned long extra;
 
 		extra = end - ((end>>PUD_SHIFT) << PUD_SHIFT);
@@ -129,7 +130,7 @@ static int __meminit save_mr(struct map_range *mr, int nr_range,
 }
 
 /*
- * Setup the direct mapping of the physical memory at PAGE_OFFSET.
+ * Setup the direct mapping of the physical memory at ##PAGE_OFFSET##.
  * This runs before bootmem is initialized and gets pages directly from
  * the physical memory. To access them they are temporarily mapped.
  *
@@ -144,7 +145,7 @@ unsigned long __init_refok init_memory_mapping(unsigned long start,
 
 	struct map_range mr[NR_RANGE_MR];
 	int nr_range, i;
-	int use_pse, use_gbpages;
+	int use_pse, use_gbpages/*gb pages 大内存页 1G*/;
 
 	printk(KERN_INFO "init_memory_mapping: %016lx-%016lx\n", start, end);
 
@@ -154,6 +155,9 @@ unsigned long __init_refok init_memory_mapping(unsigned long start,
 	 * This will simplify cpa(), which otherwise needs to support splitting
 	 * large pages into small in interrupt context, etc.
 	 */
+	/*
+		look  up the	init_gbpages();
+	*/
 	use_pse = use_gbpages = 0;
 #else
 	use_pse = cpu_has_pse;
@@ -195,6 +199,7 @@ unsigned long __init_refok init_memory_mapping(unsigned long start,
 	if (pos == 0)
 		end_pfn = 1<<(PMD_SHIFT - PAGE_SHIFT);
 	else
+		// 先把当前PMD中所有的PTE(小于等于一个PMD)给收了
 		end_pfn = ((pos + (PMD_SIZE - 1))>>PMD_SHIFT)
 				 << (PMD_SHIFT - PAGE_SHIFT);
 #else /* CONFIG_X86_64 */
@@ -209,14 +214,20 @@ unsigned long __init_refok init_memory_mapping(unsigned long start,
 	end_pfn = ((pos + (PMD_SIZE - 1)) >> PMD_SHIFT)
 			<< (PMD_SHIFT - PAGE_SHIFT);
 #endif
+	// 所有的页框还不足一个PMD的管辖范围呢
 	if (end_pfn > (end >> PAGE_SHIFT))
 		end_pfn = end >> PAGE_SHIFT;
+
 	if (start_pfn < end_pfn) {
 		nr_range = save_mr(mr, nr_range, start_pfn, end_pfn, 0);
 		pos = end_pfn << PAGE_SHIFT;
 	}
 
 	/* big page (2M) range */
+	// 这儿就从一个PMD的边界开始收拾啦
+	// 上一个不完整的PMD不是已经在刚刚的小页(4K)处理逻辑中给收拾了么
+	// 其实，如下的这一段，是收拾当前PUD中剩下的中页（2M）
+	// 也就是剩下的哪些PMD管辖的范围, n * range(PMD)
 	start_pfn = ((pos + (PMD_SIZE - 1))>>PMD_SHIFT)
 			 << (PMD_SHIFT - PAGE_SHIFT);
 #ifdef CONFIG_X86_32
@@ -228,6 +239,8 @@ unsigned long __init_refok init_memory_mapping(unsigned long start,
 		end_pfn = ((end>>PMD_SHIFT)<<(PMD_SHIFT - PAGE_SHIFT));
 #endif
 
+	// 如果start_pfn >= end_pfn:
+	//		说明剩下的页框尚不足一个PMD
 	if (start_pfn < end_pfn) {
 		nr_range = save_mr(mr, nr_range, start_pfn, end_pfn,
 				page_size_mask & (1<<PG_LEVEL_2M));
@@ -237,6 +250,7 @@ unsigned long __init_refok init_memory_mapping(unsigned long start,
 #ifdef CONFIG_X86_64
 	// 只有x86-64支持1G的页面大小
 	/* big page (1G) range */
+	// 跟上面的分析一样，这儿从一个新的PUD边界开始啦
 	start_pfn = ((pos + (PUD_SIZE - 1))>>PUD_SHIFT)
 			 << (PUD_SHIFT - PAGE_SHIFT);
 	end_pfn = (end >> PUD_SHIFT) << (PUD_SHIFT - PAGE_SHIFT);
@@ -338,6 +352,7 @@ unsigned long __init_refok init_memory_mapping(unsigned long start,
 #endif
 	__flush_tlb_all();
 
+	// 页表区域设置为reserve_early
 	if (!after_bootmem && e820_table_end > e820_table_start)
 		reserve_early(e820_table_start << PAGE_SHIFT,
 				 e820_table_end << PAGE_SHIFT, "PGTABLE");

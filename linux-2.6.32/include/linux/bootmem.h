@@ -30,7 +30,7 @@ extern unsigned long saved_max_pfn;
 typedef struct bootmem_data {
 	unsigned long node_min_pfn;
 	unsigned long node_low_pfn;
-	void *node_bootmem_map;
+	void *node_bootmem_map;	// 位图，用于确定页面是否被分配
 	unsigned long last_end_off;
 	unsigned long hint_idx;
 	struct list_head list;
@@ -95,6 +95,12 @@ extern void *__alloc_bootmem_low_node(pg_data_t *pgdat,
 				      unsigned long align,
 				      unsigned long goal);
 
+/*
+ * arxh/x86/include/asm/dma.h
+ *	for x86_64:
+ *	#define MAX_DMA_ADDRESS ((unsigned long)__va(MAX_DMA_PFN << PAGE_SHIFT))
+ *	MAX_DMA_PFN : 16*1024*1024 >> PAGE_SHIFT	16M
+ */
 #define alloc_bootmem(x) \
 	__alloc_bootmem(x, SMP_CACHE_BYTES, __pa(MAX_DMA_ADDRESS))
 #define alloc_bootmem_nopanic(x) \

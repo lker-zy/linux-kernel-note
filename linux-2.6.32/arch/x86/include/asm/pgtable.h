@@ -427,6 +427,7 @@ static inline unsigned long pud_page_vaddr(pud_t pud)
 /* Find an entry in the second-level page table.. */
 static inline pmd_t *pmd_offset(pud_t *pud, unsigned long address)
 {
+	// 得到pte的基址
 	return (pmd_t *)pud_page_vaddr(*pud) + pmd_index(address);
 }
 
@@ -473,6 +474,12 @@ static inline unsigned long pud_index(unsigned long address)
 
 static inline pud_t *pud_offset(pgd_t *pgd, unsigned long address)
 {
+	// pgd是物理地址的值, pgd_page_vaddr将其转化成虚拟地址的值
+	// 为什么呢？因为后面还要使用这个值来计算，但：
+	//		此时已经身处分页模式，CPU只认虚拟地址
+	//
+	//	加上pud偏移之后，得到pmd的基址，且这个基址值是物理地址的值
+	//	所以在做pmd_offset计算的时候，仍然需要先转换成vaddr
 	return (pud_t *)pgd_page_vaddr(*pgd) + pud_index(address);
 }
 

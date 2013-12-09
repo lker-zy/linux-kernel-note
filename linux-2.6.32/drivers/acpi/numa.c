@@ -36,6 +36,7 @@
 #define _COMPONENT	ACPI_NUMA
 ACPI_MODULE_NAME("numa");
 
+// 发现的所有nodes
 static nodemask_t nodes_found_map = NODE_MASK_NONE;
 
 /* maps to convert between proximity domain and logical node ID */
@@ -66,12 +67,15 @@ void __acpi_map_pxm_to_node(int pxm, int node)
 
 int acpi_map_pxm_to_node(int pxm)
 {
+	// 获取邻居的node id
 	int node = pxm_to_node_map[pxm];
 
 	if (node < 0){
 		if (nodes_weight(nodes_found_map) >= MAX_NUMNODES)
 			return NID_INVAL;
+		// 新增一个node
 		node = first_unset_node(nodes_found_map);
+		// 建立pxm 和 node的双射
 		__acpi_map_pxm_to_node(pxm, node);
 		node_set(node, nodes_found_map);
 	}
@@ -192,6 +196,10 @@ static int __init acpi_parse_slit(struct acpi_table_header *table)
 		printk(KERN_INFO "ACPI: SLIT table looks invalid. Not used.\n");
 		return -EINVAL;
 	}
+	// 通过reserve_early保留 slit配置数据的内存区域
+	// 先申请一块物理内存区域，然后将slit数据copy过去
+	// 然后将其物理内存区域设置为RESERVED
+	// 保留区域名称为ACPI SLIT
 	acpi_numa_slit_init(slit);
 
 	return 0;
@@ -281,6 +289,25 @@ acpi_table_parse_srat(enum acpi_srat_type id,
 					    handler, max_entries);
 }
 
+/*
+ *
+ *	NUMA系统的启动流程：
+ *		系统加电，对于单CPU机器，CPU直接执行BIOS程序，但是对于多处理机系统，由哪个CPU执行该程序是个问题。
+ *		针对这个问题，Intel提出了Multiple Processor Initialization Protocol，该协议规定了两种类型的CPU:
+ *			作为主启动CPU的BSP（Bootstrap Processor），作为应用服务CPU的AP（Application Processor）
+ *		系统加电后通过主板上的硬件选择机制，选择一个CPU作为BSP，而将其它CPU作为AP。
+ *			（具体的协议与选择算法细节，参考《IA-32 Architectures Software Developer's Manual 3A》，Chapter 7，Multiple Processor Management）[1]
+ *		在BSP上执行BIOS程序，读取/设置CMOS相关信息，并完成自检程序，为其它AP建立管理列表，此时所有AP均处于空转状态。
+ *
+ *	Linux通过读取系统的firmware中的ACPI表，获得NUMA系统的CPU及物理内存分布信息
+ *	最重要的是SRAT（System Resource Affinity Table）和SLIT（System Locality Information Table）。
+ *		SRAT中包含两个结构，Processor Local APIC/SAPIC Affinity Structure用于记录CPU信息，Memory Affinity Structure用于记录主存信息[3]。
+ *	Linux kernel中通过include/acpi/actbl1.h中acpi_table_slit与acpi_table_srat记录SLIT与SRAT结构信息
+ *	通过acpi_numa_init()函数读取系统firmware中的数据，赋值给以上两个结构，用于NUMA系统初始化
+ *
+ *	http://blog.csdn.net/lux_veritas/article/details/8962475
+ *
+*/
 int __init acpi_numa_init(void)
 {
 	/* SRAT: Static Resource Affinity Table */
@@ -290,6 +317,7 @@ int __init acpi_numa_init(void)
 		acpi_table_parse_srat(ACPI_SRAT_TYPE_CPU_AFFINITY,
 				      acpi_parse_processor_affinity, NR_CPUS);
 		acpi_table_parse_srat(ACPI_SRAT_TYPE_MEMORY_AFFINITY,
+				// 遍历邻居节点, 设置 mem node
 				      acpi_parse_memory_affinity,
 				      NR_NODE_MEMBLKS);
 	}

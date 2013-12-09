@@ -577,6 +577,8 @@ void __init initmem_init(unsigned long start_pfn, unsigned long end_pfn)
 {
 	unsigned long bootmap_size, bootmap;
 
+	// bootmap_size是描述所有的物理内存页帧需要的物理内存页数目
+	// 描述pages所需的位图占用的物理内存页面
 	bootmap_size = bootmem_bootmap_pages(end_pfn)<<PAGE_SHIFT;
 	bootmap = find_e820_area(0, end_pfn<<PAGE_SHIFT, bootmap_size,
 				 PAGE_SIZE);
@@ -586,7 +588,12 @@ void __init initmem_init(unsigned long start_pfn, unsigned long end_pfn)
 	bootmap_size = init_bootmem_node(NODE_DATA(0), bootmap >> PAGE_SHIFT,
 					 0, end_pfn);
 	e820_register_active_regions(0, start_pfn, end_pfn);
+	/*将活动内存区对应位图相关位置0，表示可被分配的*/ 
 	free_bootmem_with_active_regions(0, end_pfn);
+	/*
+	 * 对置保留位的相关页面对应的位图设置为1
+	 * 表示已经分配或者不可用（不能被分配）
+	 */
 	early_res_to_bootmem(0, end_pfn<<PAGE_SHIFT);
 	reserve_bootmem(bootmap, bootmap_size, BOOTMEM_DEFAULT);
 }

@@ -176,10 +176,10 @@ void __init e820_print_map(char *who)
 /*
  * Sanitize the BIOS e820 map.
  *
- * Some e820 responses include overlapping entries. The following
- * replaces the original e820 map with a new one, removing overlaps,
- * and resolving conflicting memory types in favor of highest
- * numbered type.
+ * Some e820 responses include overlapping(重叠、覆盖) entries. 
+ * The following replaces the original e820 map with a new one,
+ * removing overlaps,and resolving conflicting memory types 
+ * in favor of(赞成、支持) highest numbered type.
  *
  * The input parameter biosmap points to an array of 'struct
  * e820entry' which on entry has elements in the range [0, *pnr_map)
@@ -235,6 +235,8 @@ void __init e820_print_map(char *who)
  *	   ______________________4_
  */
 
+// 神贴解释
+// http://bbs.chinaunix.net/thread-1918241-1-1.html
 int __init sanitize_e820_map(struct e820entry *biosmap, int max_nr_map,
 			     u32 *pnr_map)
 {
@@ -264,7 +266,8 @@ int __init sanitize_e820_map(struct e820entry *biosmap, int max_nr_map,
 
 	/* bail out if we find any unreasonable addresses in bios map */
 	for (i = 0; i < old_nr; i++)
-		if (biosmap[i].addr + biosmap[i].size < biosmap[i].addr)
+		// range wrapped through zero, size too big
+		if (biosmap[i].adr + biosmap[i].size < biosmap[i].addr)
 			return -1;
 
 	/* create pointers for initial change-point information (for sorting) */
@@ -274,6 +277,7 @@ int __init sanitize_e820_map(struct e820entry *biosmap, int max_nr_map,
 	/* record all known change-points (starting and ending addresses),
 	   omitting those that are for empty memory regions */
 	chgidx = 0;
+	// 初始化填充 change_point_list数组
 	for (i = 0; i < old_nr; i++)	{
 		if (biosmap[i].size != 0) {
 			change_point[chgidx]->addr = biosmap[i].addr;
@@ -294,20 +298,20 @@ int __init sanitize_e820_map(struct e820entry *biosmap, int max_nr_map,
 			unsigned long long curpbaddr, lastpbaddr;
 
 			curaddr = change_point[i]->addr;
+			// lastaddr中记录的是上一个map的end值
 			lastaddr = change_point[i - 1]->addr;
 			curpbaddr = change_point[i]->pbios->addr;
 			lastpbaddr = change_point[i - 1]->pbios->addr;
 
-			/*
-			 * swap entries, when:
-			 *
-			 * curaddr > lastaddr or
-			 * curaddr == lastaddr and curaddr == curpbaddr and
-			 * lastaddr != lastpbaddr
-			 */
-			if (curaddr < lastaddr ||
+			if (curaddr < lastaddr ||	/* 有重叠 */
+				/* 
+				 * 下面这几个条件可是真真的没看懂 
+				 *
+				 *	当前地址 == 上一个地址  && 当前地址为内存段的开始地址 而 上一地址不是内存段开始地址 
+				 */
 			    (curaddr == lastaddr && curaddr == curpbaddr &&
 			     lastaddr != lastpbaddr)) {
+				// 低地址往前移动
 				change_tmp = change_point[i];
 				change_point[i] = change_point[i-1];
 				change_point[i-1] = change_tmp;
@@ -325,6 +329,7 @@ int __init sanitize_e820_map(struct e820entry *biosmap, int max_nr_map,
 	/* loop through change-points, determining affect on the new bios map */
 	for (chgidx = 0; chgidx < chg_nr; chgidx++) {
 		/* keep track of all overlapping bios entries */
+		// 是内存段的起始地址
 		if (change_point[chgidx]->addr ==
 		    change_point[chgidx]->pbios->addr) {
 			/*
@@ -339,8 +344,10 @@ int __init sanitize_e820_map(struct e820entry *biosmap, int max_nr_map,
 			 * so swap with last)
 			 */
 			for (i = 0; i < overlap_entries; i++) {
+				// 找到对应的记录内存段起始地址的point,也就是找到自己的partner
 				if (overlap_list[i] ==
 				    change_point[chgidx]->pbios)
+				// 如果找到了，就用最后一个元素来替代之，也就是remove这一项
 					overlap_list[i] =
 						overlap_list[overlap_entries-1];
 			}
@@ -352,6 +359,7 @@ int __init sanitize_e820_map(struct e820entry *biosmap, int max_nr_map,
 		 * 1=usable, 2,3,4,4+=unusable)
 		 */
 		current_type = 0;
+		// type 取值 大者优先
 		for (i = 0; i < overlap_entries; i++)
 			if (overlap_list[i]->type > current_type)
 				current_type = overlap_list[i]->type;
@@ -359,8 +367,10 @@ int __init sanitize_e820_map(struct e820entry *biosmap, int max_nr_map,
 		 * continue building up new bios map based on this
 		 * information
 		 */
+		// 只有遇到一个新的type的时候，才标示着可能需要添加新的内存段
 		if (current_type != last_type)	{
 			if (last_type != 0)	 {
+				// 仍在处理当前未结束的内存段
 				new_bios[new_bios_entry].size =
 					change_point[chgidx]->addr - last_addr;
 				/*
@@ -375,6 +385,7 @@ int __init sanitize_e820_map(struct e820entry *biosmap, int max_nr_map,
 					if (++new_bios_entry >= max_nr_map)
 						break;
 			}
+			// 设置新的内存段的起始地址以及type
 			if (current_type != 0)	{
 				new_bios[new_bios_entry].addr =
 					change_point[chgidx]->addr;
@@ -408,7 +419,7 @@ static int __init __append_e820_map(struct e820entry *biosmap, int nr_map)
 
 		e820_add_region(start, size, type);
 
-		biosmap++;
+		biosmap++;	// 全局变量
 		nr_map--;
 	}
 	return 0;
@@ -471,6 +482,8 @@ static u64 __init __e820_update_range(struct e820map *e820x, u64 start,
 		}
 
 		/* new range is totally covered? */
+		// 需要处理的是原region的一个子集
+		// 子集自成一段，首尾各成一新段
 		if (ei->addr < start && ei_end > end) {
 			__e820_add_region(e820x, start, size, new_type);
 			__e820_add_region(e820x, end, ei_end - end, ei->type);
@@ -784,11 +797,24 @@ static void __init drop_range(int i)
 static void __init drop_overlaps_that_are_ok(u64 start, u64 end)
 {
 	int i;
+	/*
+	 * Early reserved memory areas.
+	 */
 	struct early_res *r;
 	u64 lower_start, lower_end;
 	u64 upper_start, upper_end;
 	char name[16];
 
+	// early_res在哪儿初始化/赋值
+	// 初始的时候，只有一项 BIOS DATA
+/*
+ *  MAX_EARLY_RES = 20
+ *
+	static struct early_res early_res[MAX_EARLY_RES] __initdata = {
+	  {0, PAGE_SIZE, "BIOS data page" },
+	  {}
+	};
+*/
 	for (i = 0; i < MAX_EARLY_RES && early_res[i].end; i++) {
 		r = &early_res[i];
 
@@ -797,7 +823,7 @@ static void __init drop_overlaps_that_are_ok(u64 start, u64 end)
 			continue;
 
 		/*
-		 * Leave non-ok overlaps as is; let caller
+		 * Leave non-ok overlaps(重叠/重复) as is; let caller
 		 * panic "Overlapping early reservations"
 		 * when it hits this overlap.
 		 */
@@ -817,19 +843,23 @@ static void __init drop_overlaps_that_are_ok(u64 start, u64 end)
 		lower_start = lower_end = 0;
 		upper_start = upper_end = 0;
 		if (r->start < start) {
+			// lower_start 和 lower_end之间的区域是非重叠区域
 		 	lower_start = r->start;
 			lower_end = start;
 		}
 		if (r->end > end) {
+			// upper_start 到 upper_end之间的区域是非重叠的
 			upper_start = end;
 			upper_end = r->end;
 		}
 
+		// 先删除，然后准备裂变
 		/* 2. Drop the original ok overlapping range */
 		drop_range(i);
 
 		i--;		/* resume for-loop on copied down entry */
 
+		// 裂变
 		/* 3. Add back in any non-overlapping ranges. */
 		if (lower_end)
 			reserve_early_overlap_ok(lower_start, lower_end, name);
@@ -1100,12 +1130,12 @@ u64 __init early_reserve_e820(u64 startt, u64 sizet, u64 align)
 
 #ifdef CONFIG_X86_32
 # ifdef CONFIG_X86_PAE
-#  define MAX_ARCH_PFN		(1ULL<<(36-PAGE_SHIFT))
+#  define MAX_ARCH_PFN		(1ULL<<(36-PAGE_SHIFT))	/* 2^24 = 16M */
 # else
-#  define MAX_ARCH_PFN		(1ULL<<(32-PAGE_SHIFT))
+#  define MAX_ARCH_PFN		(1ULL<<(32-PAGE_SHIFT))	/* 2^20 = 1M */
 # endif
 #else /* CONFIG_X86_32 */
-# define MAX_ARCH_PFN MAXMEM>>PAGE_SHIFT	/* 2^46 */
+# define MAX_ARCH_PFN MAXMEM>>PAGE_SHIFT	/* 2^46 >> PAGE_SHIFT */
 #endif
 
 /*
@@ -1147,7 +1177,13 @@ static unsigned long __init e820_end_pfn(unsigned long limit_pfn, unsigned type)
 }
 unsigned long __init e820_end_of_ram_pfn(void)
 {
-	/* in x86-64 : MAX_ARCH_PFN = 2^46 */
+	/* in x86-64 : MAX_ARCH_PFN = 2^32 */
+	// MAX_ARCH_PFG = (MAXMEM(2^46) >> PAGE_SHIFT) = 2^32
+	// 2 ^ 32 : 2 ^ (10 + 10 + 10 + 2) =  4G
+	// 总之就是取得 最大页框号，但是有几个条件
+	//	1. type ==  E820_RAM
+	//	2. 不能大于e820_end_pfn的第一个参数
+	//	3. 不能大于MAX_ARCH_PFN, 在这儿，第一个参数就等于MAX_ARCH_PFN
 	return e820_end_pfn(MAX_ARCH_PFN, E820_RAM);
 }
 
@@ -1446,7 +1482,9 @@ char *__init default_machine_specific_memory_setup(void)
 	boot_params.e820_entries = new_nr;
 	//append_e820_map的作用是将指定的e820结构的内存区域合并到全局e820中去
 	//返回小于0代表boot_params.e820_map中没有可以合并的内容也就是说BIOS e820调用显然错误了
-	//此时全局e820是空的
+	//此时全局e820是空的   则伪造一个段添加进去
+	//
+	//核心是调用e820_add_region将boot_params.e820_map中的各段添加到e820中去
 	if (append_e820_map(boot_params.e820_map, boot_params.e820_entries)
 	  < 0) {
 		u64 mem_size;

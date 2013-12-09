@@ -21,6 +21,7 @@
 #include <asm/io.h>
 
 
+// io port 地址空间的资源树根
 struct resource ioport_resource = {
 	.name	= "PCI IO",
 	.start	= 0,
@@ -194,6 +195,14 @@ static int __release_resource(struct resource *old)
  * @new: resource descriptor desired by caller
  *
  * Returns 0 for success, negative error code on error.
+ */
+// standrd_io_resources是要注册的资源
+// ioport_resource是资源树根
+//		描述的地址范围大于等于standard_io_resources
+/*
+ * http://blog.csdn.net/ce123_zhouwei/article/details/7204458
+ * http://blog.csdn.net/acs713/article/details/7911025
+ * 参考：陈莉君 的博客-驱动开发中的I/O地址空间
  */
 int request_resource(struct resource *root, struct resource *new)
 {
