@@ -1045,6 +1045,10 @@ u64 __init find_e820_area(u64 start, u64 end, u64 size, u64 align)
 		ei_last = ei->addr + ei->size;
 		if (addr < start)
 			addr = round_up(start, align);
+		/* how is addr > start?
+		 * no matter, we expect to find an area which greater then start
+		 * and less then end, hit it
+		 */
 		if (addr >= ei_last)
 			continue;
 		while (bad_addr(&addr, size, align) && addr+size <= ei_last)

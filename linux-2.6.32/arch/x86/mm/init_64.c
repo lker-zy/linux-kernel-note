@@ -604,11 +604,16 @@ void __init paging_init(void)
 	unsigned long max_zone_pfns[MAX_NR_ZONES];
 
 	memset(max_zone_pfns, 0, sizeof(max_zone_pfns));
+	// MAX_DMA_PFN : (16 * 1024 * 1024) >> PAGE_SHIFT
+	// 16 MB ISA DMA zone
 	max_zone_pfns[ZONE_DMA] = MAX_DMA_PFN;
+	// MAX_DMA32_PFN : (4 * 1024 * 1024 * 1024) >> PAGE_SHIFT
+	// 4GB broken PCI/AGP hardware bus master zone
 	max_zone_pfns[ZONE_DMA32] = MAX_DMA32_PFN;
 	max_zone_pfns[ZONE_NORMAL] = max_pfn;
 
 	sparse_memory_present_with_active_regions(MAX_NUMNODES);
+	// 稀疏内存
 	sparse_init();
 
 	/*

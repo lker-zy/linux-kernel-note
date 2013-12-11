@@ -71,6 +71,11 @@ unsigned long node_end_pfn[MAX_NUMNODES] __read_mostly;
 s8 physnode_map[MAX_ELEMENTS] __read_mostly = { [0 ... (MAX_ELEMENTS - 1)] = -1};
 EXPORT_SYMBOL(physnode_map);
 
+/*
+ * nid : 所属的node id
+ * start： 内存区起始地址
+ * end：内存区结束地址
+ */
 void memory_present(int nid, unsigned long start, unsigned long end)
 {
 	unsigned long pfn;

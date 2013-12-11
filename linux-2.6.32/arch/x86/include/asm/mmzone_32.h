@@ -53,6 +53,7 @@ static inline void resume_map_numa_kva(pgd_t *pgd) {}
  * for now assume that 64Gb is max amount of RAM for whole system
  *    64Gb / 4096bytes/page = 16777216 pages
  */
+// 总页框数
 #define MAX_NR_PAGES 16777216
 #define MAX_ELEMENTS 1024
 #define PAGES_PER_ELEMENT (MAX_NR_PAGES/MAX_ELEMENTS)

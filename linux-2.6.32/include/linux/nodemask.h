@@ -384,6 +384,7 @@ enum node_states {
  * on them manage all possible and online nodes.
  */
 
+// 每个物理节点的在线状态,通过node_set_online()函数来设置
 extern nodemask_t node_states[NR_NODE_STATES];
 
 #if MAX_NUMNODES > 1

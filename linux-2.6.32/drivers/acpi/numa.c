@@ -325,7 +325,7 @@ int __init acpi_numa_init(void)
 	/* SLIT: System Locality Information Table */
 	acpi_table_parse(ACPI_SIG_SLIT, acpi_parse_slit);
 
-	acpi_numa_arch_fixup();
+	acpi_numa_arch_fixup();	// no op in x86_64
 	return 0;
 }
 

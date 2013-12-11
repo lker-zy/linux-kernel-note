@@ -241,7 +241,7 @@ enum zone_type {
 	 */
 	ZONE_HIGHMEM,
 #endif
-	ZONE_MOVABLE,
+	ZONE_MOVABLE,	// 2.6.32中被引入,用于适应大块连续内存的分配。
 	__MAX_NR_ZONES
 };
 

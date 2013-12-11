@@ -20,6 +20,8 @@
 #include <asm/acpi.h>
 #include <asm/k8.h>
 
+// node节点元数据（pglist_data）数组
+// 快捷获取的宏： NODE_DATA(nodeid)
 struct pglist_data *node_data[MAX_NUMNODES] __read_mostly;
 EXPORT_SYMBOL(node_data);
 
@@ -163,6 +165,7 @@ static void * __init early_node_mem(int nodeid, unsigned long start,
 				    unsigned long end, unsigned long size,
 				    unsigned long align)
 {
+	// 从e820中找出一段地址空间, 返回的是物理地址
 	unsigned long mem = find_e820_area(start, end, size, align);
 	void *ptr;
 
@@ -183,6 +186,7 @@ void __init
 setup_node_bootmem(int nodeid, unsigned long start, unsigned long end)
 {
 	unsigned long start_pfn, last_pfn, bootmap_pages, bootmap_size;
+	// pgdat_size = PAGE_SIZE
 	const int pgdat_size = roundup(sizeof(pg_data_t), PAGE_SIZE);
 	unsigned long bootmap_start, nodedata_phys;
 	void *bootmap;
@@ -195,14 +199,18 @@ setup_node_bootmem(int nodeid, unsigned long start, unsigned long end)
 	 * Don't confuse VM with a node that doesn't have the
 	 * minimum amount of memory:
 	 */
+	// (end) && ( (end - start) < NODE_MIN_SIZE )
 	if (end && (end - start) < NODE_MIN_SIZE)
 		return;
 
+	// in 4k-page , ZONE_ALIGN 应该是2^25 = 32M
+	// 将start向上对齐到32M地址边界
 	start = roundup(start, ZONE_ALIGN);
 
 	printk(KERN_INFO "Bootmem setup node %d %016lx-%016lx\n", nodeid,
 	       start, end);
 
+	// 校正起始页框
 	start_pfn = start >> PAGE_SHIFT;
 	last_pfn = end >> PAGE_SHIFT;
 
@@ -216,6 +224,7 @@ setup_node_bootmem(int nodeid, unsigned long start, unsigned long end)
 		nodedata_phys + pgdat_size - 1);
 
 	memset(NODE_DATA(nodeid), 0, sizeof(pg_data_t));
+	// bootmem_node_data在哪儿分配和设置？
 	NODE_DATA(nodeid)->bdata = &bootmem_node_data[nodeid];
 	NODE_DATA(nodeid)->node_start_pfn = start_pfn;
 	NODE_DATA(nodeid)->node_spanned_pages = last_pfn - start_pfn;
@@ -228,10 +237,12 @@ setup_node_bootmem(int nodeid, unsigned long start, unsigned long end)
 	 * of alloc_bootmem, that could clash with reserved range
 	 */
 	// 描述所有物理内存所需的页框管理信息结构所需的空间
+	// 一个位图空间
 	bootmap_pages = bootmem_bootmap_pages(last_pfn - start_pfn);
 	// pg_data_t 结构所在的nid
 	nid = phys_to_nid(nodedata_phys);
 	if (nid == nodeid)
+		// 紧接pgdata_t结构后面分配位图
 		bootmap_start = roundup(nodedata_phys + pgdat_size, PAGE_SIZE);
 	else
 		bootmap_start = roundup(start, PAGE_SIZE);
@@ -258,7 +269,7 @@ setup_node_bootmem(int nodeid, unsigned long start, unsigned long end)
 		 bootmap_start, bootmap_start + bootmap_size - 1,
 		 bootmap_pages);
 
-	// 标记范围内的页面为可用(可分配)
+	// 标记范围内的页面为可用(可分配), 主要是清理位图
 	free_bootmem_with_active_regions(nodeid, end);
 
 	/*
@@ -267,6 +278,9 @@ setup_node_bootmem(int nodeid, unsigned long start, unsigned long end)
 	 * on previous node
 	 */
 	// TODO
+	// 上面free_bootmem_with_active_regions标识可分配
+	// 这儿为什么又要将其置为reserved呢
+	// 因为处理的只是early_res中记录的那一部分
 	early_res_to_bootmem(start, end);
 
 	/*
@@ -558,6 +572,12 @@ void __init initmem_init(unsigned long start_pfn, unsigned long last_pfn)
 #endif
 
 #ifdef CONFIG_ACPI_NUMA
+	/*
+	 * acpi_scan_nodes
+	 *		遍历所有的node，为每个node设置pgdata_t信息
+	 *		为所有页面设置位图信息，根据内存拥有及使用（保留）
+	 *		情况设置位图，也就是启动内存分配器的基础
+	 */
 	if (!numa_off && !acpi_scan_nodes(start_pfn << PAGE_SHIFT,
 					  last_pfn << PAGE_SHIFT))
 		return;

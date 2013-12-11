@@ -98,7 +98,7 @@ static unsigned long __init init_bootmem_core(bootmem_data_t *bdata,
 	unsigned long mapsize;
 
 	mminit_validate_memmodel_limits(&start, &end);
-	// 页框起始地址的线性地址
+	// 页框管理位图开始地址的线性地址
 	bdata->node_bootmem_map = phys_to_virt(PFN_PHYS(mapstart));
 	bdata->node_min_pfn = start;
 	bdata->node_low_pfn = end;
@@ -344,7 +344,9 @@ void __init free_bootmem_node(pg_data_t *pgdat, unsigned long physaddr,
 
 	kmemleak_free_part(__va(physaddr), size);
 
+	// 向上对齐的页框号码
 	start = PFN_UP(physaddr);
+	// 向下对齐的页框号码
 	end = PFN_DOWN(physaddr + size);
 
 	mark_bootmem_node(pgdat->bdata, start, end, 0, 0);
@@ -497,6 +499,7 @@ find_block:
 		if (sidx >= midx || eidx > midx)
 			break;
 
+		// 验证是否有满足条件的连续内存空间
 		for (i = sidx; i < eidx; i++)
 			if (test_bit(i, bdata->node_bootmem_map)) {
 				sidx = align_idx(bdata, i, step);
@@ -520,6 +523,7 @@ find_block:
 		/*
 		 * Reserve the area now:
 		 */
+		// 将位图相关位置为1
 		if (__reserve(bdata, PFN_DOWN(start_off) + merge,
 				PFN_UP(end_off), BOOTMEM_EXCLUSIVE))
 			BUG();
@@ -555,6 +559,7 @@ static void * __init alloc_arch_preferred_bootmem(bootmem_data_t *bdata,
 	{
 		bootmem_data_t *p_bdata;
 
+		// x86_64没有定义
 		p_bdata = bootmem_arch_preferred_node(bdata, size, align,
 							goal, limit);
 		if (p_bdata)
@@ -574,16 +579,20 @@ static void * __init ___alloc_bootmem_nopanic(unsigned long size,
 	void *region;
 
 restart:
+	// 在64位平台上，如果slab不可用，直接返回NULL
 	region = alloc_arch_preferred_bootmem(NULL, size, align, goal, limit);
 	if (region)
 		return region;
 
+	// 遍历bdata_list中所有元素，相当于遍历了所有的node了
+	// bdata_list中的元素都属于每个节点的pgdata_t
 	list_for_each_entry(bdata, &bdata_list, list) {
 		if (goal && bdata->node_low_pfn <= PFN_DOWN(goal))
 			continue;
 		if (limit && bdata->node_min_pfn >= PFN_DOWN(limit))
 			break;
 
+		// 寻找连续的空闲内存进行分配，然后修改位图设置
 		region = alloc_bootmem_core(bdata, size, align, goal, limit);
 		if (region)
 			return region;

@@ -12,6 +12,8 @@ struct bootnode {
 extern int compute_hash_shift(struct bootnode *nodes, int numblks,
 			      int *nodeids);
 
+// in x86_64 4k-page
+// ZONE_ALIGN = 1 << 25
 #define ZONE_ALIGN (1UL << (MAX_ORDER+PAGE_SHIFT))
 
 extern void numa_init_array(void);

@@ -148,13 +148,14 @@ static unsigned long __meminitdata dma_reserve;
     #endif
   #endif
 
-// 在发掘NUMA的ACPI配置时， 调用acpi_numa_memory_affinity_init时被设置
+  // 在发掘NUMA的ACPI配置时， 调用acpi_numa_memory_affinity_init时被设置
   static struct node_active_region __meminitdata early_node_map[MAX_ACTIVE_REGIONS];
   static int __meminitdata nr_nodemap_entries;
   static unsigned long __meminitdata arch_zone_lowest_possible_pfn[MAX_NR_ZONES];
   static unsigned long __meminitdata arch_zone_highest_possible_pfn[MAX_NR_ZONES];
   static unsigned long __initdata required_kernelcore;
   static unsigned long __initdata required_movablecore;
+  // 在每个node中的ZONE_MOVABLE类型的zone的起始地址
   static unsigned long __meminitdata zone_movable_pfn[MAX_NUMNODES];
 
   /* movable_zone is the "real" zone pages in ZONE_MOVABLE are taken from */
@@ -163,6 +164,7 @@ static unsigned long __meminitdata dma_reserve;
 #endif /* CONFIG_ARCH_POPULATES_NODE_MAP */
 
 #if MAX_NUMNODES > 1
+  // 最大的节点编号
 int nr_node_ids __read_mostly = MAX_NUMNODES;
 int nr_online_nodes __read_mostly = 1;
 EXPORT_SYMBOL(nr_node_ids);
@@ -3437,6 +3439,8 @@ void __init free_bootmem_with_active_regions(int nid,
 
 		size_pages = end_pfn - early_node_map[i].start_pfn;
 		// 标记范围内的页面为可用(可分配)
+		// 核心是：mark_bootmem_node
+		//	主要是清除对应的位图标志bdata->node_bootmem_map
 		free_bootmem_node(NODE_DATA(early_node_map[i].nid),
 				PFN_PHYS(early_node_map[i].start_pfn),
 				size_pages << PAGE_SHIFT);
@@ -3467,6 +3471,7 @@ void __init sparse_memory_present_with_active_regions(int nid)
 {
 	int i;
 
+	// nid == MAX_NUMNODES时，会遍历early_node_map中所有的active_regions
 	for_each_active_range_index_in_nid(i, nid)
 		memory_present(early_node_map[i].nid,
 				early_node_map[i].start_pfn,
@@ -3698,12 +3703,14 @@ static void __meminit calculate_node_totalpages(struct pglist_data *pgdat,
 	unsigned long realtotalpages, totalpages = 0;
 	enum zone_type i;
 
+	// 统计所有物理页面
 	for (i = 0; i < MAX_NR_ZONES; i++)
 		totalpages += zone_spanned_pages_in_node(pgdat->node_id, i,
 								zones_size);
 	pgdat->node_spanned_pages = totalpages;
 
 	realtotalpages = totalpages;
+	// 统计去除holes之后的物理页面
 	for (i = 0; i < MAX_NR_ZONES; i++)
 		realtotalpages -=
 			zone_absent_pages_in_node(pgdat->node_id, i,
@@ -3822,6 +3829,8 @@ static void __paginginit free_area_init_core(struct pglist_data *pgdat,
 		 */
 		memmap_pages =
 			PAGE_ALIGN(size * sizeof(struct page)) >> PAGE_SHIFT;
+		// memmap_pages 用作pages结构map,这部分内存不可以被分配使用
+		// 从realsize中扣除
 		if (realsize >= memmap_pages) {
 			realsize -= memmap_pages;
 			if (memmap_pages)
@@ -3840,6 +3849,7 @@ static void __paginginit free_area_init_core(struct pglist_data *pgdat,
 					zone_names[0], dma_reserve);
 		}
 
+		// 统计内核可用内存，非HIGHMEM， MOVABLE_MEM...
 		if (!is_highmem_idx(j))
 			nr_kernel_pages += realsize;
 		nr_all_pages += realsize;
@@ -3853,6 +3863,7 @@ static void __paginginit free_area_init_core(struct pglist_data *pgdat,
 		zone->min_slab_pages = (realsize * sysctl_min_slab_ratio) / 100;
 #endif
 		zone->name = zone_names[j];
+		// 要加锁了，现在其他核心都启动起来了么？
 		spin_lock_init(&zone->lock);
 		spin_lock_init(&zone->lru_lock);
 		zone_seqlock_init(zone);
@@ -3932,6 +3943,7 @@ void __paginginit free_area_init_node(int nid, unsigned long *zones_size,
 
 	pgdat->node_id = nid;
 	pgdat->node_start_pfn = node_start_pfn;
+	// 统计物理页面，填充在pgdat结构中
 	calculate_node_totalpages(pgdat, zones_size, zholes_size);
 
 	alloc_node_mem_map(pgdat);
@@ -4002,6 +4014,7 @@ void __init add_active_range(unsigned int nid, unsigned long start_pfn,
 
 		/* Merge forward if suitable */
 		// 为什么两种merge方向，只选一个呢?
+		// 如果start_pfn小于 early_node_map[i].start_pfn呢？不处理?
 		if (start_pfn <= early_node_map[i].end_pfn &&
 				end_pfn > early_node_map[i].end_pfn) {
 			early_node_map[i].end_pfn = end_pfn;
@@ -4009,11 +4022,13 @@ void __init add_active_range(unsigned int nid, unsigned long start_pfn,
 		}
 
 		/* Merge backward if suitable */
+		// BUG?
 		if (start_pfn < early_node_map[i].end_pfn &&
 				end_pfn >= early_node_map[i].start_pfn) {
 			early_node_map[i].start_pfn = start_pfn;
 			return;
 		}
+		// start_pfn >= early_node_map[i].end	continue
 	}
 
 	/* Check that early_node_map is large enough */
@@ -4163,7 +4178,7 @@ unsigned long __init find_min_pfn_with_active_regions(void)
 /*
  * early_calculate_totalpages()
  * Sum pages in active regions for movable zone.
- * Populate N_HIGH_MEMORY for calculating usable_nodes.
+ * Populate(填充) N_HIGH_MEMORY for calculating usable_nodes.
  */
 static unsigned long __init early_calculate_totalpages(void)
 {
@@ -4193,16 +4208,24 @@ static void __init find_zone_movable_pfns_for_nodes(unsigned long *movable_pfn)
 	unsigned long kernelcore_node, kernelcore_remaining;
 	/* save the state before borrow the nodemask */
 	nodemask_t saved_node_state = node_states[N_HIGH_MEMORY];
+	// 通过对early_node_map所有区域进行加和计算，获取所有页框数量
+	// 并在node_states中的N_HIGH_MEMORY的节点掩码
 	unsigned long totalpages = early_calculate_totalpages();
+	// 计算有多少各节点拥有N_HIGH_MEMORY类型的内存区域
 	int usable_nodes = nodes_weight(node_states[N_HIGH_MEMORY]);
 
 	/*
 	 * If movablecore was specified, calculate what size of
 	 * kernelcore that corresponds so that memory usable for
-	 * any allocation type is evenly spread. If both kernelcore
+	 * any allocation type is evenly(平坦地，淡然地) spread. If both kernelcore
 	 * and movablecore are specified, then the value of kernelcore
 	 * will be used for required_kernelcore if it's greater than
 	 * what movablecore would have allowed.
+	 */
+
+	/*
+	 * 变量required_movablecore通知内核保留给ZONE_MOVABLE区域的页面数
+	 * required_kernelcore是需要保留的非ZONE_MOVABLE区域的页面数
 	 */
 	if (required_movablecore) {
 		unsigned long corepages;
@@ -4215,6 +4238,8 @@ static void __init find_zone_movable_pfns_for_nodes(unsigned long *movable_pfn)
 			roundup(required_movablecore, MAX_ORDER_NR_PAGES);
 		corepages = totalpages - required_movablecore;
 
+		// 如果required_kernelcore已经指定了要保留的非ZONE_MOVABLE页面数
+		// 则取其值,优先保证内核的要求
 		required_kernelcore = max(required_kernelcore, corepages);
 	}
 
@@ -4228,6 +4253,7 @@ static void __init find_zone_movable_pfns_for_nodes(unsigned long *movable_pfn)
 
 restart:
 	/* Spread kernelcore memory as evenly as possible throughout nodes */
+	// 将所需内核内存均分到各节点
 	kernelcore_node = required_kernelcore / usable_nodes;
 	for_each_node_state(nid, N_HIGH_MEMORY) {
 		/*
@@ -4246,10 +4272,12 @@ restart:
 		kernelcore_remaining = kernelcore_node;
 
 		/* Go through each range of PFNs within this node */
+		// 遍历节点的所有region
 		for_each_active_range_index_in_nid(i, nid) {
 			unsigned long start_pfn, end_pfn;
 			unsigned long size_pages;
 
+			// 一个node中可能有多个region
 			start_pfn = max(early_node_map[i].start_pfn,
 						zone_movable_pfn[nid]);
 			end_pfn = early_node_map[i].end_pfn;
@@ -4276,6 +4304,7 @@ restart:
 					 * kernelcore across nodes, we will
 					 * not double account here
 					 */
+					// 将剩余的内存放到movable中间去
 					zone_movable_pfn[nid] = end_pfn;
 					continue;
 				}
@@ -4312,6 +4341,7 @@ restart:
 	 * satisified
 	 */
 	usable_nodes--;
+	// 确保usable_nodes 大于1
 	if (usable_nodes && required_kernelcore > usable_nodes)
 		goto restart;
 
@@ -4346,7 +4376,7 @@ static void check_for_regular_memory(pg_data_t *pgdat)
  * This will call free_area_init_node() for each active node in the system.
  * Using the page ranges provided by add_active_range(), the size of each
  * zone in each node and their holes is calculated. If the maximum PFN
- * between two adjacent zones match, it is assumed that the zone is empty.
+ * between two adjacent（邻接的) zones match, it is assumed that the zone is empty.
  * For example, if arch_max_dma_pfn == arch_max_dma32_pfn, it is assumed
  * that arch_max_dma32_pfn has no pages. It is also assumed that a zone
  * starts where the previous one ended. For example, ZONE_DMA32 starts
@@ -4365,13 +4395,17 @@ void __init free_area_init_nodes(unsigned long *max_zone_pfn)
 				sizeof(arch_zone_lowest_possible_pfn));
 	memset(arch_zone_highest_possible_pfn, 0,
 				sizeof(arch_zone_highest_possible_pfn));
+	// 所有nodes中，最小的start_pfn
 	arch_zone_lowest_possible_pfn[0] = find_min_pfn_with_active_regions();
+	// DMA或者DMA32区域的最大页框号码
 	arch_zone_highest_possible_pfn[0] = max_zone_pfn[0];
 	for (i = 1; i < MAX_NR_ZONES; i++) {
 		if (i == ZONE_MOVABLE)
 			continue;
+		// 将一个zone的起始页框设置为上一个zone的最大页框
 		arch_zone_lowest_possible_pfn[i] =
 			arch_zone_highest_possible_pfn[i-1];
+		// 调整本zone的最大页框
 		arch_zone_highest_possible_pfn[i] =
 			max(max_zone_pfn[i], arch_zone_lowest_possible_pfn[i]);
 	}
@@ -4409,9 +4443,11 @@ void __init free_area_init_nodes(unsigned long *max_zone_pfn)
 
 	/* Initialise every node */
 	mminit_verify_pageflags_layout();
+	// 统计所有在线节点
 	setup_nr_node_ids();
 	for_each_online_node(nid) {
 		pg_data_t *pgdat = NODE_DATA(nid);
+		// find_min_pfn_for_node获取节点中最小的页框编号
 		free_area_init_node(nid, NULL,
 				find_min_pfn_for_node(nid), NULL);
 

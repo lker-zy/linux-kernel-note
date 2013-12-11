@@ -212,6 +212,7 @@ update_nodes_add(int node, unsigned long start, unsigned long end)
 	}
 
 	/* This check might be a bit too strict, but I'm keeping it for now. */
+	// s_pfn 和 e_pfn之间已经有内存区域
 	if (absent_pages_in_range(s_pfn, e_pfn) != e_pfn - s_pfn) {
 		printk(KERN_ERR
 			"SRAT: Hotplug area %lu -> %lu has existing memory\n",
@@ -226,10 +227,12 @@ update_nodes_add(int node, unsigned long start, unsigned long end)
 		nd->end = end;
 		changed = 1;
 	} else {
+		// 新加的内存插入到前端
 		if (nd->start == end) {
 			nd->start = start;
 			changed = 1;
 		}
+		// 新加的内存链入到后端
 		if (nd->end == start) {
 			nd->end = end;
 			changed = 1;
@@ -239,6 +242,7 @@ update_nodes_add(int node, unsigned long start, unsigned long end)
 	}
 
 	if (changed) {
+		// 关cpu_nodes神马事情？
 		node_set(node, cpu_nodes_parsed);
 		printk(KERN_INFO "SRAT: hot plug zone found %Lx - %Lx\n",
 				 nd->start, nd->end);
@@ -363,6 +367,10 @@ static int __init nodes_cover_memory(const struct bootnode *nodes)
 void __init acpi_numa_arch_fixup(void) {}
 
 /* Use the information discovered above to actually set up the nodes. */
+/*
+ * 核心：
+ *		针对每个node，执行setup_node_bootmem
+ */
 int __init acpi_scan_nodes(unsigned long start, unsigned long end)
 {
 	int i;
