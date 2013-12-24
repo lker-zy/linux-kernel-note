@@ -612,6 +612,7 @@ void __init paging_init(void)
 	max_zone_pfns[ZONE_DMA32] = MAX_DMA32_PFN;
 	max_zone_pfns[ZONE_NORMAL] = max_pfn;
 
+	// 将各active_regions的内存区域组织到sections中去
 	sparse_memory_present_with_active_regions(MAX_NUMNODES);
 	// 稀疏内存
 	sparse_init();
@@ -622,6 +623,7 @@ void __init paging_init(void)
 	 *	 numa support is not compiled in, and later node_set_state
 	 *	 will not set it back.
 	 */
+	// why?
 	node_clear_state(0, N_NORMAL_MEMORY);
 
 	free_area_init_nodes(max_zone_pfns);
@@ -697,6 +699,7 @@ void __init mem_init(void)
 	reservedpages = 0;
 
 	/* this will put all low memory onto the freelists */
+	// 对每个NODE 调用free_all_bootmem_core
 #ifdef CONFIG_NUMA
 	totalram_pages = numa_free_all_bootmem();
 #else

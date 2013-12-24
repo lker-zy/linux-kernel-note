@@ -49,6 +49,7 @@
 
 extern int page_group_by_mobility_disabled;
 
+// 用于获得迁移类型
 static inline int get_pageblock_migratetype(struct page *page)
 {
 	return get_pageblock_flags_group(page, PB_migrate, PB_migrate_end);
@@ -325,6 +326,7 @@ struct zone {
 	/* see spanned/present_pages for more description */
 	seqlock_t		span_seqlock;
 #endif
+	// 空闲链表
 	struct free_area	free_area[MAX_ORDER];
 
 #ifndef CONFIG_SPARSEMEM
@@ -933,6 +935,9 @@ static inline unsigned long early_pfn_to_nid(unsigned long pfn)
 #endif
 
 #define pfn_to_section_nr(pfn) ((pfn) >> PFN_SECTION_SHIFT)
+/*
+ * 获得section编号为sec的section的起始页框号码
+ */
 #define section_nr_to_pfn(sec) ((sec) << PFN_SECTION_SHIFT)
 
 #ifdef CONFIG_SPARSEMEM

@@ -650,6 +650,7 @@ static inline struct address_space *page_mapping(struct page *page)
 
 static inline int PageAnon(struct page *page)
 {
+	// 如果匿名映射，则->mapping低位被置为1
 	return ((unsigned long)page->mapping & PAGE_MAPPING_ANON) != 0;
 }
 
@@ -676,6 +677,7 @@ static inline void reset_page_mapcount(struct page *page)
 
 static inline int page_mapcount(struct page *page)
 {
+	// start from -1, so add 1
 	return atomic_read(&(page)->_mapcount) + 1;
 }
 

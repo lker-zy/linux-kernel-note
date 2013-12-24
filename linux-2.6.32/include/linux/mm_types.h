@@ -42,6 +42,8 @@ struct page {
 					 * updated asynchronously */
 	atomic_t _count;		/* Usage count, see below. */
 	union {
+		// 被映射次数-1
+		// 一个pte页表项映射到该page一次，则增加1, eg: fork->clone
 		atomic_t _mapcount;	/* Count of ptes mapped in mms,
 					 * to show when page is mapped
 					 * & limit reverse map searches.

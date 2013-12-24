@@ -109,6 +109,7 @@ static unsigned long __init init_bootmem_core(bootmem_data_t *bdata,
 	 * Initially all pages are reserved - setup_arch() has to
 	 * register free RAM areas explicitly.
 	 */
+	// 位图管理会将所有页面标记为1
 	mapsize = bootmap_bytes(end - start);
 	memset(bdata->node_bootmem_map, 0xff, mapsize);
 	///////////////////////////////////////////////////////////
@@ -174,9 +175,10 @@ static unsigned long __init free_all_bootmem_core(bootmem_data_t *bdata)
 		unsigned long *map, idx, vec;
 
 		map = bdata->node_bootmem_map;
-		idx = start - bdata->node_min_pfn;
+		idx = start - bdata->node_min_pfn;	// 偏移量
 		vec = ~map[idx / BITS_PER_LONG];
 
+		// 不是最后一组页面，且全部空闲,且aligned to the machines wordsize
 		if (aligned && vec == ~0UL && start + BITS_PER_LONG < end) {
 			int order = ilog2(BITS_PER_LONG);
 
@@ -185,6 +187,7 @@ static unsigned long __init free_all_bootmem_core(bootmem_data_t *bdata)
 		} else {
 			unsigned long off = 0;
 
+			// 依次释放每一页(空闲的页)
 			while (vec && off < BITS_PER_LONG) {
 				if (vec & 1) {
 					page = pfn_to_page(start + off);
@@ -202,6 +205,7 @@ static unsigned long __init free_all_bootmem_core(bootmem_data_t *bdata)
 	pages = bdata->node_low_pfn - bdata->node_min_pfn;
 	pages = bootmem_bootmap_pages(pages);
 	count += pages;
+	// 销毁bootmem 分配器
 	while (pages--)
 		__free_pages_bootmem(page++, 0);
 

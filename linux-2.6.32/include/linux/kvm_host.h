@@ -73,14 +73,14 @@ void kvm_io_bus_unregister_dev(struct kvm *kvm, struct kvm_io_bus *bus,
 			       struct kvm_io_device *dev);
 
 struct kvm_vcpu {
-	struct kvm *kvm;
+	struct kvm *kvm;	// 所属的虚拟机
 #ifdef CONFIG_PREEMPT_NOTIFIERS
 	struct preempt_notifier preempt_notifier;
 #endif
-	int vcpu_id;
+	int vcpu_id;		// 全局还是虚拟机内部?虚拟机内部
 	struct mutex mutex;
 	int   cpu;
-	struct kvm_run *run;
+	struct kvm_run *run;	// per-cpu上下文? vmcs?
 	unsigned long requests;
 	unsigned long guest_debug;
 	int fpu_active;

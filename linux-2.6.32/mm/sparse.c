@@ -246,7 +246,13 @@ static int __meminit sparse_init_one_section(struct mem_section *ms,
 	if (!present_section(ms))
 		return -EINVAL;
 
+	// 屏蔽.section_mem_map的最低两位
 	ms->section_mem_map &= ~SECTION_MAP_MASK;
+	/*
+	 * sparse_encode_mem_map获得：
+	 *		mem_map是属于pnum这个section的
+	 *		该函数返回该section起始的页框地址
+	 */
 	ms->section_mem_map |= sparse_encode_mem_map(mem_map, pnum) |
 							SECTION_HAS_MEM_MAP;
  	ms->pageblock_flags = pageblock_bitmap;
@@ -285,6 +291,8 @@ sparse_early_usemap_alloc_pgdat_section(struct pglist_data *pgdat)
 	 * from the same section as the pgdat where possible to avoid
 	 * this problem.
 	 */
+	// 上述注释的大意是：为了防止pgdata和usemap位于不同的section带来的问题
+	//	所以，要在pgdata所属的section中分配usemap
 	section_nr = pfn_to_section_nr(__pa(pgdat) >> PAGE_SHIFT);
 	return alloc_bootmem_section(usemap_size(), section_nr);
 }
@@ -427,6 +435,7 @@ void __init sparse_init(void)
 	for (pnum = 0; pnum < NR_MEM_SECTIONS; pnum++) {
 		if (!present_section_nr(pnum))
 			continue;
+		// 分配usemap_size()的空间
 		usemap_map[pnum] = sparse_early_usemap_alloc(pnum);
 	}
 
@@ -438,6 +447,7 @@ void __init sparse_init(void)
 		if (!usemap)
 			continue;
 
+		// 为该section的所有物理页框分配struct page结构
 		map = sparse_early_mem_map_alloc(pnum);
 		if (!map)
 			continue;

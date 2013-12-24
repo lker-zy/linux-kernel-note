@@ -1261,6 +1261,8 @@ void kernel_map_pages(struct page *page, int numpages, int enable)
 	 * Large pages for identity mappings are not used at boot time
 	 * and hence no memory allocations during large page split.
 	 */
+	// __set_pages_p和__set_pages_np的区别在于：
+	//		页表项的P位是否置位
 	if (enable)
 		__set_pages_p(page, numpages);
 	else

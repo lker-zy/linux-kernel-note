@@ -846,6 +846,7 @@ void kvm_reload_remote_mmus(struct kvm *kvm)
 	make_all_cpus_request(kvm, KVM_REQ_MMU_RELOAD);
 }
 
+// 架构无关的操作，主要是分配一些内存页面for io port，mmu等，必要的初始化
 int kvm_vcpu_init(struct kvm_vcpu *vcpu, struct kvm *kvm, unsigned id)
 {
 	struct page *page;
@@ -862,6 +863,7 @@ int kvm_vcpu_init(struct kvm_vcpu *vcpu, struct kvm *kvm, unsigned id)
 		r = -ENOMEM;
 		goto fail;
 	}
+	// for struct kvm_run
 	vcpu->run = page_address(page);
 
 	r = kvm_arch_vcpu_init(vcpu);
@@ -1073,6 +1075,7 @@ static struct kvm *kvm_create_vm(void)
 	init_rwsem(&kvm->slots_lock);
 	atomic_set(&kvm->users_count, 1);
 	spin_lock(&kvm_lock);
+	// vm_list是所有kvm实例列表
 	list_add(&kvm->vm_list, &vm_list);
 	spin_unlock(&kvm_lock);
 #ifdef KVM_COALESCED_MMIO_PAGE_OFFSET
@@ -2462,6 +2465,7 @@ static long kvm_dev_ioctl_check_extension_generic(long arg)
 	default:
 		break;
 	}
+	// default
 	return kvm_dev_ioctl_check_extension(arg);
 }
 

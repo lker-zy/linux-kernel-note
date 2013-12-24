@@ -28,8 +28,8 @@ extern unsigned long saved_max_pfn;
  * memory pages (including holes) on the node.
  */
 typedef struct bootmem_data {
-	unsigned long node_min_pfn;
-	unsigned long node_low_pfn;
+	unsigned long node_min_pfn;	// bootmem 的第一个页面
+	unsigned long node_low_pfn;	// 低端内存的顶点
 	void *node_bootmem_map;	// 位图，用于确定页面是否被分配
 	unsigned long last_end_off;
 	unsigned long hint_idx;

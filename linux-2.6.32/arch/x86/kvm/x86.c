@@ -82,6 +82,7 @@ static void update_cr8_intercept(struct kvm_vcpu *vcpu);
 static int kvm_dev_ioctl_get_supported_cpuid(struct kvm_cpuid2 *cpuid,
 				    struct kvm_cpuid_entry2 __user *entries);
 
+// in arch/x86/kvm/mmu.c
 struct kvm_x86_ops *kvm_x86_ops;
 EXPORT_SYMBOL_GPL(kvm_x86_ops);
 
@@ -5064,6 +5065,7 @@ int kvm_arch_vcpu_init(struct kvm_vcpu *vcpu)
 		r = -ENOMEM;
 		goto fail;
 	}
+	// for io port
 	vcpu->arch.pio_data = page_address(page);
 
 	r = kvm_mmu_create(vcpu);

@@ -123,7 +123,9 @@ static char * const zone_names[MAX_NR_ZONES] = {
 
 int min_free_kbytes = 1024;
 
+// 内核使用的内存页框数量
 static unsigned long __meminitdata nr_kernel_pages;
+// 所有物理内存页框数
 static unsigned long __meminitdata nr_all_pages;
 static unsigned long __meminitdata dma_reserve;
 
@@ -164,8 +166,9 @@ static unsigned long __meminitdata dma_reserve;
 #endif /* CONFIG_ARCH_POPULATES_NODE_MAP */
 
 #if MAX_NUMNODES > 1
-  // 最大的节点编号
+  // 节点总数量
 int nr_node_ids __read_mostly = MAX_NUMNODES;
+// 在线节点数
 int nr_online_nodes __read_mostly = 1;
 EXPORT_SYMBOL(nr_node_ids);
 EXPORT_SYMBOL(nr_online_nodes);
@@ -248,8 +251,9 @@ static void bad_page(struct page *page)
 	 * or allow a steady drip of one report per second.
 	 */
 	if (nr_shown == 60) {
+		// jiffies < resume
 		if (time_before(jiffies, resume)) {
-			nr_unshown++;
+			nr_unshown++;	// 被抑制的数量
 			goto out;
 		}
 		if (nr_unshown) {
@@ -258,6 +262,7 @@ static void bad_page(struct page *page)
 				nr_unshown);
 			nr_unshown = 0;
 		}
+		// 60 * HZ为一个计时周期
 		nr_shown = 0;
 	}
 	if (nr_shown++ == 0)
@@ -578,6 +583,7 @@ static void free_one_page(struct zone *zone, struct page *page, int order,
 	zone_clear_flag(zone, ZONE_ALL_UNRECLAIMABLE);
 	zone->pages_scanned = 0;
 
+	// 伙伴处理
 	__free_one_page(page, zone, order, migratetype);
 	__mod_zone_page_state(zone, NR_FREE_PAGES, 1 << order);
 	spin_unlock(&zone->lock);
@@ -588,6 +594,7 @@ static void __free_pages_ok(struct page *page, unsigned int order)
 	unsigned long flags;
 	int i;
 	int bad = 0;
+	// 页面是否被锁住
 	int wasMlocked = __TestClearPageMlocked(page);
 
 	kmemcheck_free_shadow(page, order);
@@ -602,13 +609,17 @@ static void __free_pages_ok(struct page *page, unsigned int order)
 		debug_check_no_obj_freed(page_address(page),
 					   PAGE_SIZE << order);
 	}
-	arch_free_page(page, order);
+	arch_free_page(page, order);	// no ops in x86
+	// 更改页面属性, HIGHMEM不处理
+	// 0 表示 页表项的P位不置位
 	kernel_map_pages(page, 1 << order, 0);
 
+	// 中断里面也会处理伙伴系统，所以要加锁
 	local_irq_save(flags);
 	if (unlikely(wasMlocked))
 		free_page_mlock(page);
 	__count_vm_events(PGFREE, 1 << order);
+	// 伙伴页面处理, 将页面释放到伙伴系统里面
 	free_one_page(page_zone(page), page, order,
 					get_pageblock_migratetype(page));
 	local_irq_restore(flags);
@@ -1091,6 +1102,7 @@ static void free_hot_cold_page(struct page *page, int cold)
 
 	kmemcheck_free_shadow(page, 0);
 
+	// 匿名映射, 主要考察page->mapping的第0位是否为1
 	if (PageAnon(page))
 		page->mapping = NULL;
 	if (free_pages_check(page))
@@ -1103,6 +1115,7 @@ static void free_hot_cold_page(struct page *page, int cold)
 	arch_free_page(page, 0);
 	kernel_map_pages(page, 1, 0);
 
+	// 获取当前cpu的pcp(per-cpu-pages)
 	pcp = &zone_pcp(zone, get_cpu())->pcp;
 	migratetype = get_pageblock_migratetype(page);
 	set_page_private(page, migratetype);
@@ -2021,6 +2034,7 @@ void __pagevec_free(struct pagevec *pvec)
 
 void __free_pages(struct page *page, unsigned int order)
 {
+	// 本执行点是page count的最后一个持有者
 	if (put_page_testzero(page)) {
 		trace_mm_page_free_direct(page, order);
 		if (order == 0)
@@ -2479,11 +2493,12 @@ static int find_next_best_node(int node, nodemask_t *used_node_mask)
 
 		/* Give preference to headless and unused nodes */
 		tmp = cpumask_of_node(n);
-		if (!cpumask_empty(tmp))
+		if (!cpumask_empty(tmp))	// 已经绑定到某CPU
 			val += PENALTY_FOR_NODE_WITH_CPUS;
 
 		/* Slight preference for less loaded node */
 		val *= (MAX_NODE_LOAD*MAX_NUMNODES);
+		// 节点负载信息作为一个因子
 		val += node_load[n];
 
 		if (val < min_val) {
@@ -2512,8 +2527,10 @@ static void build_zonelists_in_node_order(pg_data_t *pgdat, int node)
 	zonelist = &pgdat->node_zonelists[0];
 	for (j = 0; zonelist->_zonerefs[j].zone != NULL; j++)
 		;
+	// 将node这个节点的所有zones加入到pgdat的zonelist中去
 	j = build_zonelists_node(NODE_DATA(node), zonelist, j,
 							MAX_NR_ZONES - 1);
+	// zonlist->_zonerefs的终止
 	zonelist->_zonerefs[j].zone = NULL;
 	zonelist->_zonerefs[j].zone_idx = 0;
 }
@@ -2571,7 +2588,7 @@ static int default_zonelist_order(void)
 	struct zone *z;
 	int average_size;
 	/*
-         * ZONE_DMA and ZONE_DMA32 can be very small area in the sytem.
+	 * ZONE_DMA and ZONE_DMA32 can be very small area in the sytem.
 	 * If they are really small and used heavily, the system can fall
 	 * into OOM very easily.
 	 * This function detect ZONE_DMA/DMA32 size and confgigures zone order.
@@ -2582,14 +2599,15 @@ static int default_zonelist_order(void)
 	// for_each_online_node()遍历所有在线节点
 	for_each_online_node(nid) {
 		for (zone_type = 0; zone_type < MAX_NR_ZONES; zone_type++) {
-			z = &NODE_DATA(nid)->node_zones[zone_type];
-			if (populated_zone(z)) {
+			z = &NODE_DATA(nid)->node_zones[zone_type];	// 该node的该zone
+			if (populated_zone(z)) {	// zone not empty
 				if (zone_type < ZONE_NORMAL)
 					low_kmem_size += z->present_pages;
 				total_size += z->present_pages;
 			}
 		}
 	}
+	// DMA/DMA32足够大，order == ORDER_NODE
 	if (!low_kmem_size ||  /* there are no DMA area. */
 	    low_kmem_size > total_size/2) /* DMA/DMA32 is big. */
 		return ZONELIST_ORDER_NODE;
@@ -2597,7 +2615,8 @@ static int default_zonelist_order(void)
 	 * look into each node's config.
   	 * If there is a node whose DMA/DMA32 memory is very big area on
  	 * local memory, NODE_ORDER may be suitable.
-         */
+	 */
+	// 每个节点平均内存大小
 	average_size = total_size /
 				(nodes_weight(node_states[N_HIGH_MEMORY]) + 1);
 	for_each_online_node(nid) {
@@ -2652,6 +2671,10 @@ static void build_zonelists(pg_data_t *pgdat)
 	memset(node_order, 0, sizeof(node_order));
 	j = 0;
 
+	// 组织各节点时，distance会作为一个影响因子
+	// 先排列distance小的node，再排列distance大的node
+	// while循环内貌似并没有这个逻辑，因为在find_next_best_node中
+	// 选择node时，是先选择distance小的节点返回的
 	while ((node = find_next_best_node(local_node, &used_mask)) >= 0) {
 		int distance = node_distance(local_node, node);
 
@@ -2683,6 +2706,7 @@ static void build_zonelists(pg_data_t *pgdat)
 		build_zonelists_in_zone_order(pgdat, j);
 	}
 
+	// 对本节点的各zone进行操作-将本节点的zone加入到pgdat的zonelist[1]
 	build_thisnode_zonelists(pgdat);
 }
 
@@ -2785,6 +2809,7 @@ void build_all_zonelists(void)
 	}
 	vm_total_pages = nr_free_pagecache_pages();
 	/*
+	 *  #分组活动#
 	 * Disable grouping by mobility if the number of pages in the
 	 * system is too low to allow the mechanism to work. It would be
 	 * more accurate, but expensive to check per-zone. This check is
@@ -2949,6 +2974,12 @@ static void setup_zone_migrate_reserve(struct zone *zone)
  * up by free_all_bootmem() once the early boot process is
  * done. Non-atomic initialization, single-pass.
  */
+/*
+enum memmap_context {
+	MEMMAP_EARLY,
+	MEMMAP_HOTPLUG,
+};
+*/
 void __meminit memmap_init_zone(unsigned long size, int nid, unsigned long zone,
 		unsigned long start_pfn, enum memmap_context context)
 {
@@ -2978,7 +3009,8 @@ void __meminit memmap_init_zone(unsigned long size, int nid, unsigned long zone,
 		mminit_verify_page_links(page, zone, nid, pfn);
 		init_page_count(page);
 		reset_page_mapcount(page);
-		SetPageReserved(page);
+		SetPageReserved(page);	// 设置页面PG属性RESERVED
+								// 在构造伙伴系统的时候，清除该标志
 		/*
 		 * Mark the block movable so that blocks are reserved for
 		 * movable at startup. This will force kernel allocations
@@ -2993,14 +3025,17 @@ void __meminit memmap_init_zone(unsigned long size, int nid, unsigned long zone,
 		 * check here not to call set_pageblock_migratetype() against
 		 * pfn out of zone.
 		 */
+		// 系统初始化的时候将所有页面归类为可移动页面
+		// 其他各组(MIGRATE_TYPE)都为空的
 		if ((z->zone_start_pfn <= pfn)
 		    && (pfn < z->zone_start_pfn + z->spanned_pages)
-		    && !(pfn & (pageblock_nr_pages - 1)))
-			set_pageblock_migratetype(page, MIGRATE_MOVABLE);
+		    && !(pfn & (pageblock_nr_pages - 1)))				// pfn 是 2^(pageblock_nr_pages)边界对齐
+			set_pageblock_migratetype(page, MIGRATE_MOVABLE);	// 可移动内存的处理,将这连续的2^(pageblock_nr_pages)的内存标记为MIGRATE_MOVABLE
 
 		INIT_LIST_HEAD(&page->lru);
 #ifdef WANT_PAGE_VIRTUAL
 		/* The shift won't overflow because ZONE_NORMAL is below 4G. */
+		// 直接映射的区域
 		if (!is_highmem_idx(zone))
 			set_page_address(page, __va(pfn << PAGE_SHIFT));
 #endif
@@ -3289,7 +3324,9 @@ void zone_pcp_update(struct zone *zone)
 
 static __meminit void zone_pcp_init(struct zone *zone)
 {
+	// pcp : per cpu pages
 	int cpu;
+	// 听说是和告诉缓存有关的
 	unsigned long batch = zone_batchsize(zone);
 
 	for (cpu = 0; cpu < NR_CPUS; cpu++) {
@@ -3326,6 +3363,7 @@ __meminit int init_currently_empty_zone(struct zone *zone,
 			(unsigned long)zone_idx(zone),
 			zone_start_pfn, (zone_start_pfn + size));
 
+	// 初始化伙伴系统的各级ORDER TYPE的空闲链表
 	zone_init_free_lists(zone);
 
 	return 0;
@@ -3473,6 +3511,7 @@ void __init sparse_memory_present_with_active_regions(int nid)
 
 	// nid == MAX_NUMNODES时，会遍历early_node_map中所有的active_regions
 	for_each_active_range_index_in_nid(i, nid)
+		// 将内存区域组织到section中去
 		memory_present(early_node_map[i].nid,
 				early_node_map[i].start_pfn,
 				early_node_map[i].end_pfn);
@@ -3707,7 +3746,7 @@ static void __meminit calculate_node_totalpages(struct pglist_data *pgdat,
 	for (i = 0; i < MAX_NR_ZONES; i++)
 		totalpages += zone_spanned_pages_in_node(pgdat->node_id, i,
 								zones_size);
-	pgdat->node_spanned_pages = totalpages;
+	pgdat->node_spanned_pages = totalpages;	// 含空洞的页面数量
 
 	realtotalpages = totalpages;
 	// 统计去除holes之后的物理页面
@@ -3715,7 +3754,7 @@ static void __meminit calculate_node_totalpages(struct pglist_data *pgdat,
 		realtotalpages -=
 			zone_absent_pages_in_node(pgdat->node_id, i,
 								zholes_size);
-	pgdat->node_present_pages = realtotalpages;
+	pgdat->node_present_pages = realtotalpages;	// 不包含空洞
 	printk(KERN_DEBUG "On node %d totalpages: %lu\n", pgdat->node_id,
 							realtotalpages);
 }
@@ -3795,8 +3834,8 @@ static inline int pageblock_default_order(unsigned int order)
 
 /*
  * Set up the zone data structures:
- *   - mark all pages reserved
- *   - mark all memory queues empty
+ *   - mark all pages reserved(当初始化伙伴系统的时候，再清除这些标志)
+ *   - mark all memory queues empty(free list)
  *   - clear the memory bitmaps
  */
 static void __paginginit free_area_init_core(struct pglist_data *pgdat,
@@ -3818,7 +3857,9 @@ static void __paginginit free_area_init_core(struct pglist_data *pgdat,
 		unsigned long size, realsize, memmap_pages;
 		enum lru_list l;
 
+		// 找出在这个node里面特定ZONE(j)的页面数,包括空洞页面
 		size = zone_spanned_pages_in_node(nid, j, zones_size);
+		// 找出在这个node里面特定ZONE(j)的除去空洞的页面数
 		realsize = size - zone_absent_pages_in_node(nid, j,
 								zholes_size);
 
@@ -3843,6 +3884,7 @@ static void __paginginit free_area_init_core(struct pglist_data *pgdat,
 				zone_names[j], memmap_pages, realsize);
 
 		/* Account for reserved pages */
+		// dma_reserve从哪儿赋值？命令行参数传递？
 		if (j == 0 && realsize > dma_reserve) {
 			realsize -= dma_reserve;
 			printk(KERN_DEBUG "  %s zone: %lu pages reserved\n",
@@ -3885,11 +3927,18 @@ static void __paginginit free_area_init_core(struct pglist_data *pgdat,
 		if (!size)
 			continue;
 
+		// 如下构造伙伴分配器?
+		// pageblock_order 设置
 		set_pageblock_order(pageblock_default_order());
 		setup_usemap(pgdat, zone, size);
 		ret = init_currently_empty_zone(zone, zone_start_pfn,
 						size, MEMMAP_EARLY);
 		BUG_ON(ret);
+		// 初始化所有页框，struct page结构初始化
+		// @size: 所有页面数量，包含空洞
+		// @nid: 节点编号
+		// @j: zone编号
+		// @zone_start_pfn: 该zone的起始页框号
 		memmap_init(size, nid, j, zone_start_pfn);
 		zone_start_pfn += size;
 	}
@@ -4447,13 +4496,15 @@ void __init free_area_init_nodes(unsigned long *max_zone_pfn)
 	setup_nr_node_ids();
 	for_each_online_node(nid) {
 		pg_data_t *pgdat = NODE_DATA(nid);
-		// find_min_pfn_for_node获取节点中最小的页框编号
 		free_area_init_node(nid, NULL,
+				// find_min_pfn_for_node获取节点中最小的页框编号
 				find_min_pfn_for_node(nid), NULL);
 
 		/* Any memory on that node */
 		if (pgdat->node_present_pages)
+			// 注册到node_states数组中，生成N_HIGH_MEMORY的节点位图
 			node_set_state(nid, N_HIGH_MEMORY);
+		// 注册到node_states数组中，生成N_NORMAL_MEMORY的节点位图
 		check_for_regular_memory(pgdat);
 	}
 }
@@ -5044,6 +5095,7 @@ void set_pageblock_flags_group(struct page *page, unsigned long flags,
 	VM_BUG_ON(pfn >= zone->zone_start_pfn + zone->spanned_pages);
 
 	for (; start_bitidx <= end_bitidx; start_bitidx++, value <<= 1)
+		// 肯定只有一个value命中flags的, 清除其他所有的bits
 		if (flags & value)
 			__set_bit(bitidx + start_bitidx, bitmap);
 		else

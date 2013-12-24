@@ -182,6 +182,12 @@ static void * __init early_node_mem(int nodeid, unsigned long start,
 }
 
 /* Initialize bootmem allocator for a node */
+// 1. 分配node的pglist_data结构，并填充
+// 2. 绑定bootmem_node_data结构
+// 3. 为位图区域node_bootmem_map分配空间
+// 4. 初始化(所有填充为1)node_bootmem_map位图
+// 5. 按需修改node_bootmem_map位图，reserver或者free
+// 6. 将pglist_data和node_bootmem_map空间标记为reserver
 void __init
 setup_node_bootmem(int nodeid, unsigned long start, unsigned long end)
 {
@@ -214,7 +220,7 @@ setup_node_bootmem(int nodeid, unsigned long start, unsigned long end)
 	start_pfn = start >> PAGE_SHIFT;
 	last_pfn = end >> PAGE_SHIFT;
 
-	// early_node_mem返回的是虚拟地址
+	// early_node_mem返回的是虚拟地址,为节点的pgdata_t分配空间
 	node_data[nodeid] = early_node_mem(nodeid, start, end, pgdat_size,
 					   SMP_CACHE_BYTES);
 	if (node_data[nodeid] == NULL)
@@ -261,6 +267,7 @@ setup_node_bootmem(int nodeid, unsigned long start, unsigned long end)
 	bootmap_start = __pa(bootmap);
 
 	// 建立页框管理信息
+	// 内部将所有页面对应的位图标记为1, free_bootmem_with_active_regions中会再按需清理
 	bootmap_size = init_bootmem_node(NODE_DATA(nodeid),
 					 bootmap_start >> PAGE_SHIFT,
 					 start_pfn, last_pfn);

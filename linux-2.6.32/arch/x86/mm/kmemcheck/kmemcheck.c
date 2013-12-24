@@ -256,6 +256,8 @@ void kmemcheck_hide(struct pt_regs *regs)
 		regs->flags |= X86_EFLAGS_IF;
 }
 
+// 将PTE项中的_PAGE_PRESENT(P位)置位， _PAGE_HIDDEN位清除
+// P位表示所映射的页面是否在内存中
 void kmemcheck_show_pages(struct page *p, unsigned int n)
 {
 	unsigned int i;

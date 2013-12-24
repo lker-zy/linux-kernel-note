@@ -108,7 +108,7 @@ struct vcpu_vmx {
 			unsigned rip;
 		} irq;
 	} rmode;
-	int vpid;
+	int vpid;	// 系统范围内的vpid，最大支持 1 << 16
 	bool emulation_required;
 	enum emulation_result invalid_state_emulation_result;
 
@@ -627,6 +627,7 @@ static void vmx_save_host_state(struct kvm_vcpu *vcpu)
 	 * Set host fs and gs selectors.  Unfortunately, 22.2.3 does not
 	 * allow segment selectors with cpl > 0 or ti == 1.
 	 */
+	// 保存当前ldt段选择子
 	vmx->host_state.ldt_sel = kvm_read_ldt();
 	vmx->host_state.gs_ldt_reload_needed = vmx->host_state.ldt_sel;
 	savesegment(fs, vmx->host_state.fs_sel);
@@ -3817,6 +3818,7 @@ static void vmx_free_vcpu(struct kvm_vcpu *vcpu)
 	kmem_cache_free(kvm_vcpu_cache, vmx);
 }
 
+// id 来自于用户态
 static struct kvm_vcpu *vmx_create_vcpu(struct kvm *kvm, unsigned int id)
 {
 	int err;
@@ -3826,8 +3828,9 @@ static struct kvm_vcpu *vmx_create_vcpu(struct kvm *kvm, unsigned int id)
 	if (!vmx)
 		return ERR_PTR(-ENOMEM);
 
-	allocate_vpid(vmx);
+	allocate_vpid(vmx);		// 分配vmx->vpid
 
+	// 架构无关的初始化
 	err = kvm_vcpu_init(&vmx->vcpu, kvm, id);
 	if (err)
 		goto free_vcpu;
@@ -3842,6 +3845,7 @@ static struct kvm_vcpu *vmx_create_vcpu(struct kvm *kvm, unsigned int id)
 	if (!vmx->host_msrs)
 		goto free_guest_msrs;
 
+	// 分配VMCS结构空间
 	vmx->vmcs = alloc_vmcs();
 	if (!vmx->vmcs)
 		goto free_msrs;
@@ -3859,6 +3863,7 @@ static struct kvm_vcpu *vmx_create_vcpu(struct kvm *kvm, unsigned int id)
 		if (alloc_apic_access_page(kvm) != 0)
 			goto free_vmcs;
 
+	// EPT支持，否则就影子页表了
 	if (enable_ept) {
 		if (!kvm->arch.ept_identity_map_addr)
 			kvm->arch.ept_identity_map_addr =

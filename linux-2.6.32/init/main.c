@@ -511,7 +511,7 @@ static void __init mm_init(void)
 	 * and it's bigger than MAX_ORDER unless SPARSEMEM.
 	 */
 	page_cgroup_init_flatmem();
-	mem_init();	// arch/x86/mm/init_64.c
+	mem_init();	// arch/x86/mm/init_64.c 
 	kmem_cache_init();
 	pgtable_cache_init();
 	vmalloc_init();
@@ -561,7 +561,7 @@ asmlinkage void __init start_kernel(void)
 	smp_prepare_boot_cpu();	/* arch-specific boot-cpu hooks */
 
 	build_all_zonelists();
-	page_alloc_init();
+	page_alloc_init();	// 注册hotcpu的notify:page_alloc_cpu_notify
 
 	printk(KERN_NOTICE "Kernel command line: %s\n", boot_command_line);
 	parse_early_param();
@@ -576,7 +576,7 @@ asmlinkage void __init start_kernel(void)
 	vfs_caches_init_early();
 	sort_main_extable();
 	trap_init();	// arch/x86/kernel/traps.c
-	mm_init();
+	mm_init();	// 释放bootmem分配器， 构造伙伴系统
 	/*
 	 * Set up the scheduler prior starting any interrupts (such as the
 	 * timer interrupt). Full topology setup happens at smp_init()
