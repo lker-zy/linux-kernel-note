@@ -262,12 +262,13 @@ static int will_become_orphaned_pgrp(struct pid *pgrp, struct task_struct *ignor
 		    is_global_init(p->real_parent))
 			continue;
 
-		// 父子不属于同一个进程组 属于同一个会话，不会成孤儿
+		// 有一个父子不属于同一个进程组 但 属于同一个会话，不会成孤儿
 		if (task_pgrp(p->real_parent) != pgrp &&
 		    task_session(p->real_parent) == task_session(p))
 			return 0;
 	} while_each_pid_task(pgrp, PIDTYPE_PGID, p);
 
+	// 否则，成为孤儿进程组
 	return 1;
 }
 
@@ -322,8 +323,11 @@ kill_orphaned_pgrp(struct task_struct *tsk, struct task_struct *parent)
 
 	if (task_pgrp(parent) != pgrp &&	// 父子进程不在同一个进程组
 	    task_session(parent) == task_session(tsk) &&	// 父子在同一个会话
-		/* 判断是否产生孤儿进程组*/
+		// 如上两个条件说明当前进程所在进程组不是一个孤儿进程组
+		
+		/* 判断进程pgrp的退出是否产生孤儿进程组*/
 	    will_become_orphaned_pgrp(pgrp, ignored_task) &&
+		// 进程组pgrp是否含有STOPPED的线程
 	    has_stopped_jobs(pgrp)) {
 		__kill_pgrp_info(SIGHUP, SEND_SIG_PRIV, pgrp);
 		__kill_pgrp_info(SIGCONT, SEND_SIG_PRIV, pgrp);
