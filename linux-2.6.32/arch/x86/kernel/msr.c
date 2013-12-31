@@ -22,6 +22,27 @@
  * an SMP box will direct the access to CPU %d.
  */
 
+/*
+ * Add By lker-zy
+ * 简介：http://hi.baidu.com/wooutstanding/item/539215e11719b2e02a09a492
+ * MSR 总体来是为了设置CPU 的工作环境和标示CPU 的工作状态，包括温度控制，性能监控等
+ * 具体来说，分为以下几项:
+ * 1). Thermal
+ * 2). Frequency
+ * 3). C State
+ * 4). Microcode
+ * 5). EIST
+ * 6). TM
+ * 7). Key Features Of CPU
+ * 8). Voltage
+ * 9). Cache Control
+ * 10). MTRR
+ * 11). DCA(Direct Cache Access)
+ * 12). Machine Check
+ * 13). 硬件联机控制
+ * 14). other　
+ */
+
 #include <linux/module.h>
 
 #include <linux/types.h>

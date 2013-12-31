@@ -35,7 +35,7 @@
 
 #define PT64_ROOT_LEVEL 4
 #define PT32_ROOT_LEVEL 2
-#define PT32E_ROOT_LEVEL 3
+#define PT32E_ROOT_LEVEL 3	// PAE
 
 #define PFERR_PRESENT_MASK (1U << 0)
 #define PFERR_WRITE_MASK (1U << 1)

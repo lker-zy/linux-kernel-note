@@ -1406,6 +1406,7 @@ static nodemask_t *policy_nodemask(gfp_t gfp, struct mempolicy *policy)
 /* Return a zonelist indicated by gfp for node representing a mempolicy */
 static struct zonelist *policy_zonelist(gfp_t gfp, struct mempolicy *policy)
 {
+	// 1. 挑选合适的NODE
 	int nd = numa_node_id();
 
 	switch (policy->mode) {
@@ -1429,6 +1430,7 @@ static struct zonelist *policy_zonelist(gfp_t gfp, struct mempolicy *policy)
 	default:
 		BUG();
 	}
+	// 2. 挑选合适的zonelist
 	return node_zonelist(nd, gfp);
 }
 
@@ -1576,7 +1578,9 @@ static struct page *alloc_page_interleave(gfp_t gfp, unsigned order,
 	struct page *page;
 
 	zl = node_zonelist(nid, gfp);
+	// 最终还是调用的__alloc_pages_nodemask, 只不过其nodemask参数为空
 	page = __alloc_pages(gfp, order, zl);
+	// 看情况，应该是说没有最佳分配，则进行一次 计数 吧
 	if (page && page_zone(page) == zonelist_zone(&zl->_zonerefs[0]))
 		inc_zone_page_state(page, NUMA_INTERLEAVE_HIT);
 	return page;
@@ -1665,6 +1669,16 @@ struct page *alloc_pages_current(gfp_t gfp, unsigned order)
 	 */
 	if (pol->mode == MPOL_INTERLEAVE)
 		return alloc_page_interleave(gfp, order, interleave_nodes(pol));
+	// policy_zonelist获取一个合适NODE的合适zonelist
+	// policy_nodemask,得到一个可选的node列表
+	// __alloc_pages_nodemask:
+	//	遍历所有待选的zone
+	//	1. 验大小(watermark),不够进入2
+	//	2. 回收再利用，不够继续下一个zone，否则，进入3
+	//	3. 操作伙伴系统进行分配
+	//
+	//	所有zone都分配失败，则触发kswap工作，然后再分配
+	//	GFP_THISNODE是个例外，宁死不屈，分配不到就失败吧
 	return __alloc_pages_nodemask(gfp, order,
 			policy_zonelist(gfp, pol), policy_nodemask(gfp, pol));
 }

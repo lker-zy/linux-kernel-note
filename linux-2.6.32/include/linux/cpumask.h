@@ -9,7 +9,9 @@
 #include <linux/kernel.h>
 #include <linux/threads.h>
 #include <linux/bitmap.h>
-
+// DECLARE_BITMAP：
+// 定义一个名字叫做bits的位图(unsigned long的数组)，位图长度为NR_CPUS
+// NR_CPUS用来计算需要多少个unsigned long变量空间
 typedef struct cpumask { DECLARE_BITMAP(bits, NR_CPUS); } cpumask_t;
 
 /**
@@ -590,6 +592,8 @@ static inline size_t cpumask_size(void)
  *	free_cpumask_var(tmpmask);
  */
 #ifdef CONFIG_CPUMASK_OFFSTACK
+// cpumask_var_t是一个指向cpumask结构的指针
+// 而cpumask只有一个成员就是一个位图
 typedef struct cpumask *cpumask_var_t;
 
 bool alloc_cpumask_var_node(cpumask_var_t *mask, gfp_t flags, int node);

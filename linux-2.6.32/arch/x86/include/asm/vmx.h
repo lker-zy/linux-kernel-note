@@ -182,6 +182,7 @@ enum vmcs_field {
 	CR3_TARGET_VALUE1               = 0x0000600a,
 	CR3_TARGET_VALUE2               = 0x0000600c,
 	CR3_TARGET_VALUE3               = 0x0000600e,
+	// exit_reason之外的VMEXIT辅助信息
 	EXIT_QUALIFICATION              = 0x00006400,
 	GUEST_LINEAR_ADDRESS            = 0x0000640a,
 	GUEST_CR0                       = 0x00006800,
@@ -375,6 +376,13 @@ enum vmcs_field {
 #define VMX_EPT_IDENTITY_PAGETABLE_ADDR		0xfffbc000ul
 
 
+/*
+ * VMCLEAR 清除当前VMCS结构体
+ * VMPTRLD 加载一个VMCS结构体指针作为当前操作对象
+ * VMPTRST 保存当前VMCS结构体指针
+ * VMREAD 读VMCS结构体指定域
+ * VMWRITE 写VMCS
+ */
 #define ASM_VMX_VMCLEAR_RAX       ".byte 0x66, 0x0f, 0xc7, 0x30"
 #define ASM_VMX_VMLAUNCH          ".byte 0x0f, 0x01, 0xc2"
 #define ASM_VMX_VMRESUME          ".byte 0x0f, 0x01, 0xc3"

@@ -142,7 +142,7 @@ static DEFINE_SPINLOCK(vmx_vpid_lock);
 
 static struct vmcs_config {
 	int size;
-	int order;
+	int order;	// 设置为vmcs结构需要的内存数量(vmcs_config.size)相应的order值
 	u32 revision_id;
 	u32 pin_based_exec_ctrl;
 	u32 cpu_based_exec_ctrl;
@@ -150,6 +150,7 @@ static struct vmcs_config {
 	u32 vmexit_ctrl;
 	u32 vmentry_ctrl;
 } vmcs_config;
+// vmcs_config 全局变量，在vmx_x86_ops.hardware_setup中由setup_vmcs_config进行初始化
 
 static struct vmx_capability {
 	u32 ept;
@@ -387,6 +388,7 @@ static struct kvm_msr_entry *find_msr_entry(struct vcpu_vmx *vmx, u32 msr)
 {
 	int i;
 
+	// 找到msr在vmx->guest_msrs中的index
 	i = __find_msr_index(vmx, msr);
 	if (i >= 0)
 		return &vmx->guest_msrs[i];
@@ -467,6 +469,7 @@ static unsigned long vmcs_readl(unsigned long field)
 {
 	unsigned long value;
 
+	// 将值输出到value，源操作数由field指定
 	asm volatile (__ex(ASM_VMX_VMREAD_RDX_RAX)
 		      : "=a"(value) : "d"(field) : "cc");
 	return value;
@@ -537,9 +540,10 @@ static void vmcs_set_bits(unsigned long field, u32 mask)
 	vmcs_writel(field, vmcs_readl(field) | mask);
 }
 
+// 是要设置kvm需要截获的异常列表么?
 static void update_exception_bitmap(struct kvm_vcpu *vcpu)
 {
-	u32 eb;
+	u32 eb;	// exception bitmap
 
 	eb = (1u << PF_VECTOR) | (1u << UD_VECTOR) | (1u << MC_VECTOR);
 	if (!vcpu->fpu_active)
@@ -574,6 +578,7 @@ static void reload_tss(void)
 	load_TR_desc();
 }
 
+// EFER : 扩展特性使能寄存器
 static void load_transition_efer(struct vcpu_vmx *vmx)
 {
 	int efer_offset = vmx->msr_offset_efer;
@@ -592,16 +597,20 @@ static void load_transition_efer(struct vcpu_vmx *vmx)
 	 */
 	ignore_bits = EFER_NX | EFER_SCE;
 #ifdef CONFIG_X86_64
+	// EFER_LMA : long mode?
 	ignore_bits |= EFER_LMA | EFER_LME;
 	/* SCE is meaningful only in long mode on Intel */
 	if (guest_efer & EFER_LMA)
 		ignore_bits &= ~(u64)EFER_SCE;
 #endif
+	// 有效的EFER标志集合是否相同
 	if ((guest_efer & ~ignore_bits) == (host_efer & ~ignore_bits))
 		return;
 
 	vmx->host_state.guest_efer_loaded = 1;
+	// guest_efer 的有效值
 	guest_efer &= ~ignore_bits;
+	// why ? host_efer & ignore_bits为什么要合并到guest_efer中去呢
 	guest_efer |= host_efer & ignore_bits;
 	wrmsrl(MSR_EFER, guest_efer);
 	vmx->vcpu.stat.efer_reload++;
@@ -717,6 +726,8 @@ static void vmx_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 		kvm_migrate_timers(vcpu);
 		set_bit(KVM_REQ_TLB_FLUSH, &vcpu->requests);
 		local_irq_disable();
+		// 将vcpu(vmx) 挂入当cpu的vcpus_on_cpu链表中
+		// vmx通过local_vcpus_link挂接进去
 		list_add(&vmx->local_vcpus_link,
 			 &per_cpu(vcpus_on_cpu, cpu));
 		local_irq_enable();
@@ -725,7 +736,9 @@ static void vmx_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 	if (per_cpu(current_vmcs, cpu) != vmx->vmcs) {
 		u8 error;
 
+		// 将当前物理cpu的关联vcpu的vmcs设置为vmx->vmcs
 		per_cpu(current_vmcs, cpu) = vmx->vmcs;
+		// vmptrld 加载一个vmcs结构作为当前操作对象
 		asm volatile (__ex(ASM_VMX_VMPTRLD_RAX) "; setna %0"
 			      : "=g"(error) : "a"(&phys_addr), "m"(phys_addr)
 			      : "cc");
@@ -744,7 +757,7 @@ static void vmx_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 		 * processors.
 		 */
 		vmcs_writel(HOST_TR_BASE, kvm_read_tr_base()); /* 22.2.4 */
-		kvm_get_gdt(&dt);
+		kvm_get_gdt(&dt);	// 获取宿主机GDT到dt中
 		vmcs_writel(HOST_GDTR_BASE, dt.base);   /* 22.2.4 */
 
 		rdmsrl(MSR_IA32_SYSENTER_ESP, sysenter_esp);
@@ -755,6 +768,7 @@ static void vmx_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 		 */
 		rdtscll(tsc_this);
 		if (tsc_this < vcpu->arch.host_tsc) {
+			// 调整虚拟机系统的时钟设置
 			delta = vcpu->arch.host_tsc - tsc_this;
 			new_offset = vmcs_read64(TSC_OFFSET) + delta;
 			vmcs_write64(TSC_OFFSET, new_offset);
@@ -1340,10 +1354,13 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 
 static struct vmcs *alloc_vmcs_cpu(int cpu)
 {
+	// 获得该CPU的local node
 	int node = cpu_to_node(cpu);
 	struct page *pages;
 	struct vmcs *vmcs;
 
+	// setup_vmcs_config 设置 vmcs_config结构
+	// 但这儿的vmcs_config变量来自于哪儿呢? 全局结构体变量vmcs_config,本文件开头
 	pages = alloc_pages_exact_node(node, GFP_KERNEL, vmcs_config.order);
 	if (!pages)
 		return NULL;
@@ -1375,6 +1392,7 @@ static __init int alloc_kvm_area(void)
 {
 	int cpu;
 
+	// 预先为每个物理CPU分配一VMCS并绑定之
 	for_each_online_cpu(cpu) {
 		struct vmcs *vmcs;
 
@@ -1389,12 +1407,13 @@ static __init int alloc_kvm_area(void)
 	return 0;
 }
 
+// 各种硬件能力探测，并更新一些开关值(enable/disable)
 static __init int hardware_setup(void)
 {
 	if (setup_vmcs_config(&vmcs_config) < 0)
 		return -EIO;
 
-	if (boot_cpu_has(X86_FEATURE_NX))
+	if (boot_cpu_has(X86_FEATURE_NX))	// 页面权限保护
 		kvm_enable_efer_bits(EFER_NX);
 
 	if (!cpu_has_vmx_vpid())
@@ -1620,13 +1639,14 @@ static void vmx_decache_cr4_guest_bits(struct kvm_vcpu *vcpu)
 	vcpu->arch.cr4 |= vmcs_readl(GUEST_CR4) & ~KVM_GUEST_CR4_MASK;
 }
 
+// for PAE
 static void ept_load_pdptrs(struct kvm_vcpu *vcpu)
 {
 	if (!test_bit(VCPU_EXREG_PDPTR,
 		      (unsigned long *)&vcpu->arch.regs_dirty))
 		return;
 
-	if (is_paging(vcpu) && is_pae(vcpu) && !is_long_mode(vcpu)) {
+	if (is_paging(vcpu) && is_pae(vcpu)/*PAE must*/ && !is_long_mode(vcpu)) {
 		vmcs_write64(GUEST_PDPTR0, vcpu->arch.pdptrs[0]);
 		vmcs_write64(GUEST_PDPTR1, vcpu->arch.pdptrs[1]);
 		vmcs_write64(GUEST_PDPTR2, vcpu->arch.pdptrs[2]);
@@ -2247,6 +2267,8 @@ static void allocate_vpid(struct vcpu_vmx *vmx)
 	spin_unlock(&vmx_vpid_lock);
 }
 
+// intercept : 拦截
+// 大意是不让vmx拦截相关的MSR指令吧
 static void __vmx_disable_intercept_for_msr(unsigned long *msr_bitmap, u32 msr)
 {
 	int f = sizeof(unsigned long);
@@ -2259,6 +2281,7 @@ static void __vmx_disable_intercept_for_msr(unsigned long *msr_bitmap, u32 msr)
 	 * have the write-low and read-high bitmap offsets the wrong way round.
 	 * We can control MSRs 0x00000000-0x00001fff and 0xc0000000-0xc0001fff.
 	 */
+	// 看不懂，不知道在干啥，只知道是clear_bit，clear的谁不知道
 	if (msr <= 0x1fff) {
 		__clear_bit(msr, msr_bitmap + 0x000 / f); /* read-low */
 		__clear_bit(msr, msr_bitmap + 0x800 / f); /* write-low */
@@ -2400,9 +2423,11 @@ static int vmx_vcpu_setup(struct vcpu_vmx *vmx)
 		if (wrmsr_safe(index, data_low, data_high) < 0)
 			continue;
 		data = data_low | ((u64)data_high << 32);
+		// 备份宿主机的MSR设置
 		vmx->host_msrs[j].index = index;
 		vmx->host_msrs[j].reserved = 0;
 		vmx->host_msrs[j].data = data;
+		// copy 到虚拟机系统
 		vmx->guest_msrs[j] = vmx->host_msrs[j];
 		++vmx->nmsrs;
 	}
@@ -3061,6 +3086,8 @@ static int handle_cpuid(struct kvm_vcpu *vcpu, struct kvm_run *kvm_run)
 
 static int handle_rdmsr(struct kvm_vcpu *vcpu, struct kvm_run *kvm_run)
 {
+	// rdmsr的源操作数是ecx
+	// 内容读出至寄存器EDX:EAX中
 	u32 ecx = vcpu->arch.regs[VCPU_REGS_RCX];
 	u64 data;
 
@@ -3243,12 +3270,16 @@ static int handle_ept_violation(struct kvm_vcpu *vcpu, struct kvm_run *kvm_run)
 
 	exit_qualification = vmcs_readl(EXIT_QUALIFICATION);
 
+	// 该位是reseverd，所以检测一下
 	if (exit_qualification & (1 << 6)) {
 		printk(KERN_ERR "EPT: GPA exceeds GAW!\n");
 		return -EINVAL;
 	}
 
+	// 获取qualification的第7、8两位
 	gla_validity = (exit_qualification >> 7) & 0x3;
+	// gla_validity == 1, bit7=1, bit8 =0
+	// else : bit7==0, linear-address invalid
 	if (gla_validity != 0x3 && gla_validity != 0x1 && gla_validity != 0) {
 		printk(KERN_ERR "EPT: Handling EPT violation failed!\n");
 		printk(KERN_ERR "EPT: GPA: 0x%lx, GVA: 0x%lx\n",
@@ -3372,6 +3403,7 @@ static void handle_invalid_guest_state(struct kvm_vcpu *vcpu,
 	preempt_enable();
 
 	while (!guest_state_valid(vcpu)) {
+		// 无效则进行必要的模拟?
 		err = emulate_instruction(vcpu, kvm_run, 0, 0, 0);
 
 		if (err == EMULATE_DO_MMIO)
@@ -3641,10 +3673,12 @@ static void vmx_vcpu_run(struct kvm_vcpu *vcpu, struct kvm_run *kvm_run)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 
+	// 主机是否支持EPT， 客户机是否开启了分页模式
 	if (enable_ept && is_paging(vcpu)) {
 		vmcs_writel(GUEST_CR3, vcpu->arch.cr3);
 		ept_load_pdptrs(vcpu);
 	}
+	// 不可屏蔽中断 NMI
 	/* Record the guest's net vcpu time for enforced NMI injections. */
 	if (unlikely(!cpu_has_virtual_nmis() && vmx->soft_vnmi_blocked))
 		vmx->entry_time = ktime_get();
@@ -3678,6 +3712,7 @@ static void vmx_vcpu_run(struct kvm_vcpu *vcpu, struct kvm_run *kvm_run)
 
 	asm(
 		/* Store host registers */
+		// vmentry操作不是会自动进行保存么????????
 		"push %%"R"dx; push %%"R"bp;"
 		"push %%"R"cx \n\t"
 		"cmp %%"R"sp, %c[host_rsp](%0) \n\t"
@@ -3713,12 +3748,18 @@ static void vmx_vcpu_run(struct kvm_vcpu *vcpu, struct kvm_run *kvm_run)
 #endif
 		"mov %c[rcx](%0), %%"R"cx \n\t" /* kills %0 (ecx) */
 
+		/******************************************************/
+		/***  进入GUEST 的核心在这儿***************************/
+		/******************************************************/
 		/* Enter guest mode */
 		"jne .Llaunched \n\t"
 		__ex(ASM_VMX_VMLAUNCH) "\n\t"
 		"jmp .Lkvm_vmx_return \n\t"
 		".Llaunched: " __ex(ASM_VMX_VMRESUME) "\n\t"
 		".Lkvm_vmx_return: "
+		/******************************************************/
+		/***  从GUEST 返回root operation mode******************/
+		/******************************************************/
 		/* Save guest registers, load host registers, keep flags */
 		"xchg %0,     (%%"R"sp) \n\t"
 		"mov %%"R"ax, %c[rax](%0) \n\t"
@@ -3786,6 +3827,7 @@ static void vmx_vcpu_run(struct kvm_vcpu *vcpu, struct kvm_run *kvm_run)
 	asm("mov %0, %%ds; mov %0, %%es" : : "r"(__USER_DS));
 	vmx->launched = 1;
 
+	// 调用到这儿以后，已经从GUEST mode返回
 	vmx_complete_interrupts(vmx);
 }
 
@@ -3819,28 +3861,40 @@ static void vmx_free_vcpu(struct kvm_vcpu *vcpu)
 }
 
 // id 来自于用户态
+// 主要逻辑：
+// 1. 创建vcpu_vmx实例，分配vpid
+// 2. 架构无关初始化，主要是部分内存的申请
+// 3. MSR相关设置，还只是设置到vmx结构体
+// 4. VMCS allocation && vmcs load
+// 5. vmcs 相关字段设置(vmcs write)
 static struct kvm_vcpu *vmx_create_vcpu(struct kvm *kvm, unsigned int id)
 {
 	int err;
+	// 创建一个vmx的vcpu实例
 	struct vcpu_vmx *vmx = kmem_cache_zalloc(kvm_vcpu_cache, GFP_KERNEL);
 	int cpu;
 
 	if (!vmx)
 		return ERR_PTR(-ENOMEM);
 
-	allocate_vpid(vmx);		// 分配vmx->vpid
+	// 分配一个vpid到vmx->vpid,如果开启该功能的话
+	// 系统范围内的分配
+	allocate_vpid(vmx);	
 
 	// 架构无关的初始化
+	// struct kvm_vcpu vcpu是直接嵌入在vmx中了，已经分配空间
 	err = kvm_vcpu_init(&vmx->vcpu, kvm, id);
 	if (err)
 		goto free_vcpu;
 
+	// guest系统 MSR寄存器相关 MSR：特殊模块寄存器
 	vmx->guest_msrs = kmalloc(PAGE_SIZE, GFP_KERNEL);
 	if (!vmx->guest_msrs) {
 		err = -ENOMEM;
 		goto uninit_vcpu;
 	}
 
+	// 宿主机系统MSR 
 	vmx->host_msrs = kmalloc(PAGE_SIZE, GFP_KERNEL);
 	if (!vmx->host_msrs)
 		goto free_guest_msrs;
@@ -3853,12 +3907,18 @@ static struct kvm_vcpu *vmx_create_vcpu(struct kvm *kvm, unsigned int id)
 	vmcs_clear(vmx->vmcs);
 
 	cpu = get_cpu();
+	// 和宿主机CPU绑定
+	// 加载VMCS结构
+	// 读取一些宿主机的设置(MSR，GDT等)，设置到虚拟机系统
 	vmx_vcpu_load(&vmx->vcpu, cpu);
+	// 各种VMCS的WRITE操作
+	// copy宿主机的MSR信息
 	err = vmx_vcpu_setup(vmx);
 	vmx_vcpu_put(&vmx->vcpu);
 	put_cpu();
 	if (err)
 		goto free_vmcs;
+	// TODO
 	if (vm_need_virtualize_apic_accesses(kvm))
 		if (alloc_apic_access_page(kvm) != 0)
 			goto free_vmcs;
@@ -3868,6 +3928,7 @@ static struct kvm_vcpu *vmx_create_vcpu(struct kvm *kvm, unsigned int id)
 		if (!kvm->arch.ept_identity_map_addr)
 			kvm->arch.ept_identity_map_addr =
 				VMX_EPT_IDENTITY_PAGETABLE_ADDR;
+		// TODO
 		if (alloc_identity_pagetable(kvm) != 0)
 			goto free_vmcs;
 	}
@@ -4026,6 +4087,7 @@ static struct kvm_x86_ops vmx_x86_ops = {
 	.gb_page_enable = vmx_gb_page_enable,
 };
 
+// kvm_intel模块初始化入口
 static int __init vmx_init(void)
 {
 	int r;
@@ -4057,6 +4119,7 @@ static int __init vmx_init(void)
 	 * delays, but the vmexits simply slow things down).
 	 */
 	memset(vmx_io_bitmap_a, 0xff, PAGE_SIZE);
+	// 0x80 : PC debug port
 	clear_bit(0x80, vmx_io_bitmap_a);
 
 	memset(vmx_io_bitmap_b, 0xff, PAGE_SIZE);
@@ -4066,6 +4129,9 @@ static int __init vmx_init(void)
 
 	set_bit(0, vmx_vpid_bitmap); /* 0 is reserved for host */
 
+	// 架构无关的模块初始化，没有找到kvm模块的module_init
+	// 而且，加载kvm_intel模块时候会自动加载kvm模块
+	// ???
 	r = kvm_init(&vmx_x86_ops, sizeof(struct vcpu_vmx), THIS_MODULE);
 	if (r)
 		goto out3;
@@ -4079,14 +4145,24 @@ static int __init vmx_init(void)
 
 	if (enable_ept) {
 		bypass_guest_pf = 0;
+		// TODO
+		// 不知所云
 		kvm_mmu_set_base_ptes(VMX_EPT_READABLE_MASK |
 			VMX_EPT_WRITABLE_MASK);
 		kvm_mmu_set_mask_ptes(0ull, 0ull, 0ull, 0ull,
 				VMX_EPT_EXECUTABLE_MASK);
-		kvm_enable_tdp();
+		// 开启EPT功能，具体在
+		// kvm_arch_vcpu_setup->
+		//		kvm_mmu_setup->
+		//			init_kvm_mmu->
+		//				init_kvm_tdp_mmu
+		// 中被设置好
+		// 出页面相关问题的时候，通过tdp_page_fault进行处理
+		kvm_enable_tdp();	// tdp_enabled = true
 	} else
 		kvm_disable_tdp();
 
+	// ept disabled, shadow pte
 	if (bypass_guest_pf)
 		kvm_mmu_set_nonpresent_ptes(~0xffeull, 0ull);
 
@@ -4112,6 +4188,10 @@ static void __exit vmx_exit(void)
 	free_page((unsigned long)vmx_io_bitmap_b);
 	free_page((unsigned long)vmx_io_bitmap_a);
 
+	// 所以卸载了kvm_intel模块， kvm模块也就卸载了?
+	// 实测并非如此
+	//
+	// 但是kvm_intel模块卸载之前，kvm模块无法卸载
 	kvm_exit();
 }
 

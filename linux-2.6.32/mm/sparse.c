@@ -263,6 +263,8 @@ static int __meminit sparse_init_one_section(struct mem_section *ms,
 unsigned long usemap_size(void)
 {
 	unsigned long size_bytes;
+	// 把一个section里面的页面分成数个block，每个block共享同一个pageblock_bits单元
+	// 也就是说同一个block的页面，具有相同的可迁移属性
 	size_bytes = roundup(SECTION_BLOCKFLAGS_BITS, 8) / 8;
 	size_bytes = roundup(size_bytes, sizeof(unsigned long));
 	return size_bytes;
@@ -428,6 +430,7 @@ void __init sparse_init(void)
 	 * sparse_early_mem_map_alloc, so allocate usemap_map at first.
 	 */
 	size = sizeof(unsigned long *) * NR_MEM_SECTIONS;
+	// usemap_map是两级结构
 	usemap_map = alloc_bootmem(size);
 	if (!usemap_map)
 		panic("can not allocate usemap_map\n");

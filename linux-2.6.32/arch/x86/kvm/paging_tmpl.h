@@ -402,6 +402,7 @@ static u64 *FNAME(fetch)(struct kvm_vcpu *vcpu, gva_t addr,
  *  Returns: 1 if we need to emulate the instruction, 0 otherwise, or
  *           a negative value on error.
  */
+// paging64_page_fault
 static int FNAME(page_fault)(struct kvm_vcpu *vcpu, gva_t addr,
 			       u32 error_code)
 {
@@ -416,11 +417,12 @@ static int FNAME(page_fault)(struct kvm_vcpu *vcpu, gva_t addr,
 	int level = PT_PAGE_TABLE_LEVEL;
 	unsigned long mmu_seq;
 
+	// audit 审计
 	pgprintk("%s: addr %lx err %x\n", __func__, addr, error_code);
 	kvm_mmu_audit(vcpu, "pre page fault");
 
 	r = mmu_topup_memory_caches(vcpu);
-	if (r)
+	if (r)	// error
 		return r;
 
 	/*
@@ -434,7 +436,7 @@ static int FNAME(page_fault)(struct kvm_vcpu *vcpu, gva_t addr,
 	 */
 	if (!r) {
 		pgprintk("%s: guest page fault\n", __func__);
-		inject_page_fault(vcpu, addr, walker.error_code);
+		inject_page_fault(vcpu, addr, walker.error_code);	// 将page fault重新注入到客户机
 		vcpu->arch.last_pt_write_count = 0; /* reset fork detector */
 		return 0;
 	}
@@ -446,6 +448,7 @@ static int FNAME(page_fault)(struct kvm_vcpu *vcpu, gva_t addr,
 
 	mmu_seq = vcpu->kvm->mmu_notifier_seq;
 	smp_rmb();
+	// guest host's  pfn to host's pfn
 	pfn = gfn_to_pfn(vcpu->kvm, walker.gfn);
 
 	/* mmio */

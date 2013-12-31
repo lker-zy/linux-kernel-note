@@ -2021,10 +2021,12 @@ static int kvm_vm_ioctl_set_memory_alias(struct kvm *kvm,
 	/* General sanity checks */
 	if (alias->memory_size & (PAGE_SIZE - 1))
 		goto out;
+	// 未对齐
 	if (alias->guest_phys_addr & (PAGE_SIZE - 1))
 		goto out;
 	if (alias->slot >= KVM_ALIAS_SLOTS)
 		goto out;
+	// 回绕
 	if (alias->guest_phys_addr + alias->memory_size
 	    < alias->guest_phys_addr)
 		goto out;
@@ -2527,8 +2529,10 @@ static void kvm_init_msr_list(void)
 
 	/* skip the first msrs in the list. KVM-specific */
 	for (i = j = KVM_SAVE_MSRS_BEGIN; i < ARRAY_SIZE(msrs_to_save); i++) {
+		// iterate
 		if (rdmsr_safe(msrs_to_save[i], &dummy[0], &dummy[1]) < 0)
 			continue;
+		// save
 		if (j < i)
 			msrs_to_save[j] = msrs_to_save[i];
 		j++;
@@ -3329,10 +3333,14 @@ int kvm_arch_init(void *opaque)
 		goto out;
 	}
 
+	// mmu init
+	// 1. all kinds of kmem_cache_create
+	// 2. shrinker register
 	r = kvm_mmu_module_init();
 	if (r)
 		goto out;
 
+	// save msrs
 	kvm_init_msr_list();
 
 	kvm_x86_ops = ops;
@@ -3345,6 +3353,7 @@ int kvm_arch_init(void *opaque)
 		per_cpu(cpu_tsc_khz, cpu) = tsc_khz;
 	if (!boot_cpu_has(X86_FEATURE_CONSTANT_TSC)) {
 		tsc_khz_ref = tsc_khz;
+		// cpu 调频通知链
 		cpufreq_register_notifier(&kvmclock_cpufreq_notifier_block,
 					  CPUFREQ_TRANSITION_NOTIFIER);
 	}
@@ -3823,7 +3832,10 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu, struct kvm_run *kvm_run)
 	}
 
 	trace_kvm_entry(vcpu->vcpu_id);
+	// 这儿才是真正的进入客户机
+	// 当run回调返回的时候，客户机已经退出，系统运行回到root模式
 	kvm_x86_ops->run(vcpu, kvm_run);
+	// 宿主机系统已经接管
 
 	if (unlikely(vcpu->arch.switch_db_regs || test_thread_flag(TIF_DEBUG))) {
 		set_debugreg(current->thread.debugreg0, 0);
@@ -3864,6 +3876,10 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu, struct kvm_run *kvm_run)
 
 	kvm_lapic_sync_from_vapic(vcpu);
 
+	// 总的来说，就是检查VMEXIT的原因，执行对应的回调处理
+	// vmx的回调函数定义在 kvm_vmx_exit_handlers中
+	// 如果内核处理VMEXIT成功，返回1,以备重新进入客户机
+	// 否则，需要用户空间辅助仿真，返回0,仿真完后再进入内核并进入客户机
 	r = kvm_x86_ops->handle_exit(kvm_run, vcpu);
 out:
 	return r;
@@ -3903,7 +3919,7 @@ static int __vcpu_run(struct kvm_vcpu *vcpu, struct kvm_run *kvm_run)
 						KVM_MP_STATE_RUNNABLE;
 				case KVM_MP_STATE_RUNNABLE:
 					break;
-				case KVM_MP_STATE_SIPI_RECEIVED:
+				case KVM_MP_STATE_SIPI_RECEIVED:	// sigle step?
 				default:
 					r = -EINTR;
 					break;
@@ -3911,9 +3927,11 @@ static int __vcpu_run(struct kvm_vcpu *vcpu, struct kvm_run *kvm_run)
 			}
 		}
 
+		// 有错误，或者需要用户空间辅助虚拟化
 		if (r <= 0)
 			break;
 
+		// 如下情况都属于可以在kvm内部自己搞定的
 		clear_bit(KVM_REQ_PENDING_TIMER, &vcpu->requests);
 		if (kvm_cpu_has_pending_timer(vcpu))
 			kvm_inject_pending_timer_irqs(vcpu);
@@ -3964,6 +3982,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu, struct kvm_run *kvm_run)
 	if (!irqchip_in_kernel(vcpu->kvm))
 		kvm_set_cr8(vcpu, kvm_run->cr8);
 
+	// io port ?
 	if (vcpu->arch.pio.cur_count) {
 		r = complete_pio(vcpu);
 		if (r)
@@ -4848,7 +4867,7 @@ int kvm_arch_vcpu_ioctl_translate(struct kvm_vcpu *vcpu,
 				    struct kvm_translation *tr)
 {
 	unsigned long vaddr = tr->linear_address;
-	gpa_t gpa;
+	gpa_t gpa;	// guest physical address
 
 	vcpu_load(vcpu);
 	down_read(&vcpu->kvm->slots_lock);

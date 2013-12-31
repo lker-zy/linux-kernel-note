@@ -1563,6 +1563,7 @@ zonelist_scan:
 			int ret;
 
 			mark = zone->watermark[alloc_flags & ALLOC_WMARK_MASK];
+			// 判断是否还有足够内存-分配后的剩余内存在watermark之上
 			if (zone_watermark_ok(zone, order, mark,
 				    classzone_idx, alloc_flags))
 				goto try_this_zone;
@@ -1570,6 +1571,7 @@ zonelist_scan:
 			if (zone_reclaim_mode == 0)
 				goto this_zone_full;
 
+			// 内存不够，先回收再利用点儿
 			ret = zone_reclaim(zone, gfp_mask, order);
 			switch (ret) {
 			case ZONE_RECLAIM_NOSCAN:
@@ -1582,11 +1584,13 @@ zonelist_scan:
 				/* did we reclaim enough */
 				if (!zone_watermark_ok(zone, order, mark,
 						classzone_idx, alloc_flags))
+					// 回收完还是不够用啊，尽力了，再想别的办法把
 					goto this_zone_full;
 			}
 		}
 
 try_this_zone:
+		// 操作伙伴系统，进行分配
 		page = buffered_rmqueue(preferred_zone, zone, order,
 						gfp_mask, migratetype);
 		if (page)
@@ -1844,6 +1848,7 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
 	 * allowed per node queues are empty and that nodes are
 	 * over allocated.
 	 */
+	// 宁死不屈型的
 	if (NUMA_BUILD && (gfp_mask & GFP_THISNODE) == GFP_THISNODE)
 		goto nopage;
 
@@ -1955,6 +1960,7 @@ struct page *
 __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order,
 			struct zonelist *zonelist, nodemask_t *nodemask)
 {
+	// zone index
 	enum zone_type high_zoneidx = gfp_zone(gfp_mask);
 	struct zone *preferred_zone;
 	struct page *page;
@@ -1978,6 +1984,11 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order,
 		return NULL;
 
 	/* The preferred zone is used for statistics later */
+	// 挑选一个合适的ZONE
+	// 1. zone index不高于high_zoneidx
+	// 2. 如果nodemask != NULL, zone 所属的node is in nodemask 
+	// 返回结果存储于preferred_zone中
+	/** PAY ATTENTION : 这个zone不一定就是用来分配内存的哪个zone，另有用途 ***/
 	first_zones_zonelist(zonelist, high_zoneidx, nodemask, &preferred_zone);
 	if (!preferred_zone)
 		return NULL;
@@ -3511,7 +3522,7 @@ void __init sparse_memory_present_with_active_regions(int nid)
 
 	// nid == MAX_NUMNODES时，会遍历early_node_map中所有的active_regions
 	for_each_active_range_index_in_nid(i, nid)
-		// 将内存区域组织到section中去
+		// 将内存区域组织到section中去, mm/sparse.c
 		memory_present(early_node_map[i].nid,
 				early_node_map[i].start_pfn,
 				early_node_map[i].end_pfn);

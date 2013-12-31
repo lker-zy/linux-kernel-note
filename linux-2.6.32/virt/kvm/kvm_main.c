@@ -76,6 +76,7 @@ MODULE_LICENSE("GPL");
 DEFINE_SPINLOCK(kvm_lock);
 LIST_HEAD(vm_list);
 
+// 一个指向某CPU位图的指针
 static cpumask_var_t cpus_hardware_enabled;
 
 struct kmem_cache *kvm_vcpu_cache;
@@ -1204,6 +1205,7 @@ int __kvm_set_memory_region(struct kvm *kvm,
 	base_gfn = mem->guest_phys_addr >> PAGE_SHIFT;
 	npages = mem->memory_size >> PAGE_SHIFT;
 
+	// TODO
 	if (!npages)
 		mem->flags &= ~KVM_MEM_LOG_DIRTY_PAGES;
 
@@ -1494,6 +1496,7 @@ unsigned long gfn_to_hva(struct kvm *kvm, gfn_t gfn)
 }
 EXPORT_SYMBOL_GPL(gfn_to_hva);
 
+// 客户机页框向宿主机页框的转化
 pfn_t gfn_to_pfn(struct kvm *kvm, gfn_t gfn)
 {
 	struct page *page[1];
@@ -2080,6 +2083,7 @@ out_free2:
 	case KVM_GET_MP_STATE: {
 		struct kvm_mp_state mp_state;
 
+		// 从vcpu->arch.mp_state中读取
 		r = kvm_arch_vcpu_ioctl_get_mpstate(vcpu, &mp_state);
 		if (r)
 			goto out;
@@ -2101,7 +2105,7 @@ out_free2:
 		r = 0;
 		break;
 	}
-	case KVM_TRANSLATE: {
+	case KVM_TRANSLATE: {	// 将VCPU的虚拟地址翻译成guest主机中的物理地址
 		struct kvm_translation tr;
 
 		r = -EFAULT;
@@ -2525,10 +2529,12 @@ static struct miscdevice kvm_dev = {
 	&kvm_chardev_ops,
 };
 
+// 核心： VMXON
 static void hardware_enable(void *junk)
 {
 	int cpu = raw_smp_processor_id();
 
+	// cpus_hardware_enabled之前被zalloc_cpumask_var清空了
 	if (cpumask_test_cpu(cpu, cpus_hardware_enabled))
 		return;
 	cpumask_set_cpu(cpu, cpus_hardware_enabled);
@@ -2797,16 +2803,34 @@ static void kvm_sched_out(struct preempt_notifier *pn,
 	kvm_arch_vcpu_put(vcpu);
 }
 
+/**
+ * @ opaque : kvm operations callbacks
+ *
+ * 1. 架构相关init操作，如下面注释描述(kvm_arch_init)
+ * 2. 各种硬件探测，为物理CPU分配对应VMCS结构
+ * 3. 物理CPU打开虚拟化硬件支持， VMXON
+ * 4. 相关通知链注册
+ * 5. sys文件系统相关处理
+ * 6. slab : vcpu cache建立
+ */
 int kvm_init(void *opaque, unsigned int vcpu_size,
 		  struct module *module)
 {
 	int r;
 	int cpu;
 
+	/*
+	 * In intel:vmx
+	 * 1. kvm operations bind
+	 * 2. mmu init
+	 * 3. backup msrs
+	 * 4. cpu tsc
+	 */
 	r = kvm_arch_init(opaque);
 	if (r)
 		goto out_fail;
 
+	// bad_page : 看名字，应该是用来做无效页面引用的参考吧?
 	bad_page = alloc_page(GFP_KERNEL | __GFP_ZERO);
 
 	if (bad_page == NULL) {
@@ -2821,24 +2845,27 @@ int kvm_init(void *opaque, unsigned int vcpu_size,
 		goto out_free_0;
 	}
 
+	// 调用kvm_ops . hardware_setup
 	r = kvm_arch_hardware_setup();
 	if (r < 0)
 		goto out_free_0a;
 
 	for_each_online_cpu(cpu) {
 		smp_call_function_single(cpu,
-				kvm_arch_check_processor_compat,
+				kvm_arch_check_processor_compat,// 同上，回调处理
 				&r, 1);
 		if (r < 0)
 			goto out_free_1;
 	}
 
 	on_each_cpu(hardware_enable, NULL, 1);
+	// 让KVM模块感知到物理CPU的变动
 	r = register_cpu_notifier(&kvm_cpu_notifier);
 	if (r)
 		goto out_free_2;
 	register_reboot_notifier(&kvm_reboot_notifier);
 
+	// TODO : kobject
 	r = sysdev_class_register(&kvm_sysdev_class);
 	if (r)
 		goto out_free_3;

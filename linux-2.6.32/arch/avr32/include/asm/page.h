@@ -50,7 +50,7 @@ static inline int get_order(unsigned long size)
 {
 	unsigned lz;
 
-	size = (size - 1) >> PAGE_SHIFT;
+	size = (size - 1) >> PAGE_SHIFT;	// 得到页面数量
 	asm("clz %0, %1" : "=r"(lz) : "r"(size));
 	return 32 - lz;
 }

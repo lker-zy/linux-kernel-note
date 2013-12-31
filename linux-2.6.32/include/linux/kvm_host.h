@@ -103,7 +103,7 @@ struct kvm_vcpu {
 };
 
 struct kvm_memory_slot {
-	gfn_t base_gfn;
+	gfn_t base_gfn;	// 该slot中记录的guest 起始物理页框号
 	unsigned long npages;
 	unsigned long flags;
 	unsigned long *rmap;
@@ -112,7 +112,7 @@ struct kvm_memory_slot {
 		unsigned long rmap_pde;
 		int write_count;
 	} *lpage_info[KVM_NR_PAGE_SIZES - 1];
-	unsigned long userspace_addr;
+	unsigned long userspace_addr;	// 该slot表示的内存在用户空间的起始线性地址
 	int user_alloc;
 };
 

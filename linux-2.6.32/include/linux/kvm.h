@@ -608,6 +608,63 @@ struct kvm_clock_data {
 #define KVM_X86_SET_MCE           _IOW(KVMIO,  0x9e, struct kvm_x86_mce)
 
 /*
+ *
+ * 指令字	功能说明
+ * KVM_GET_REGS	获取通用寄存器信息
+ * KVM_SET_REGS	设置通用寄存器信息
+ * KVM_GET_SREGS	获取特殊寄存器信息
+ * KVM_SET_SREGS	设置特殊寄存器信息
+ * KVM_GET_MSRS	获取MSR寄存器信息
+ * KVM_SET_MSRS	设置MSR寄存器信息
+ * KVM_GET_FPU	获取浮点寄存器信息
+ * KVM_SET_FPU	设置浮点寄存器信息
+ * KVM_GET_XSAVE	获取VCPU的xsave寄存器信息
+ * KVM_SET_XSAVE	设置VCPU的xsave寄存器信息
+ * KVM_GET_XCRS	获取VCPU的xcr寄存器信息
+ * KVM_SET_XCRS	设置VCPU的xcr寄存器信息
+ *   
+ *KVM在中断管理和事件管理中，也提供了丰富的指令字。
+ *在KVM运行期间，可以通过中断管理向vCPU插入中断，或者获取vCPU的一些事件（如热插拔等），该部分指令字如下表所示。
+ *
+ *   表 vcpu ioctl指令字(中断和控制类)
+ *
+ *
+ *   指令字	功能说明
+ * KVM_INTERRUPT	通过插入一个中断向量，在VCPU上产生中断(当APIC无效时)
+ * KVM_SET_SIGNAL_MASK	设置某一个VCPU的中断信号屏蔽
+ * KVM_GET_CPU_EVENTS	获取VCPU中被挂起待延时处理的信号，如中断、NMI和异常
+ * KVM_SET_CPU_EVENTS	设置VCPU的信号，如中断、NMI和异常
+ *    
+ *内存管理是虚拟机管理中一个重要的组成部分，KVM也提供了相应的API支持，该部分指令字如下表所示。
+ *
+ *   表  vcpu ioctl指令字(中断和控制类)
+ *
+ * KVM_TRANSLATE	将VCPU的虚拟地址翻译成guest主机中的物理地址
+ * KVM_SET_USER_MEMORY_REGION	修改VCPU的内存区域
+ * KVM_SET_TSS_ADDR	（Intel架构专用）初始化TSS内存区域
+ * KVM_SET_IDENTITY_MAP_ADDR	（Intel架构专用）初始化Identity内存区域
+ *     
+ *除了上面的vCPU管理、中断管理和内存管理之外，KVM最后还提供了其他方面的管理
+ *如CPUID的设置、调试接口等，这部分接口的指令字如表5-8所示。
+ *
+ *     表5-8  vcpu ioctl指令字(中断和控制类)
+ *
+ *     指令字	功能说明
+ * KVM_SET_GUEST_DEBUG	开启Guest OS的调试模式
+ * KVM_GET_DEBUGREGS	获取VCPU中的调试寄存器
+ * KVM_SET_DEBUGREGS	设置VCPU中的调试寄存器
+ * KVM_SET_CPUID	获取VCPU的CPUID信息
+ * KVM_GET_CPUID	设置VCPU的CPUID信息
+ * KVM_GET_CLOCK	获取VCPU的timestamp信息
+ * KVM_SET_CLOCK	设置VCPU的timestamp信息
+ * KVM_GET_MP_STATE	获取VCPU的对称处理信息(多处理器用)
+ * KVM_SET_MP_STATE	设置VCPU的对称处理信息(多处理器用)
+ * KVM_SET_BOOT_CPU_ID	设置系统启动的VCPU号，默认为0
+ *  
+ *
+ */
+
+/*
  * Deprecated interfaces
  */
 struct kvm_breakpoint {

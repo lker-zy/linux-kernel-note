@@ -124,8 +124,8 @@ static inline int allocflags_to_migratetype(gfp_t gfp_flags)
 		return MIGRATE_UNMOVABLE;
 
 	/* Group based on mobility */
-	return (((gfp_flags & __GFP_MOVABLE) != 0) << 1) |
-		((gfp_flags & __GFP_RECLAIMABLE) != 0);
+	return (((gfp_flags & __GFP_MOVABLE) != 0) << 1) |	// 分配可移动内存
+		((gfp_flags & __GFP_RECLAIMABLE) != 0);			// 可回收内存
 }
 
 #ifdef CONFIG_HIGHMEM
@@ -253,6 +253,11 @@ static inline int gfp_zonelist(gfp_t flags)
  * For the normal case of non-DISCONTIGMEM systems the NODE_DATA() gets
  * optimized to &contig_page_data at compile-time.
  */
+// 每个NODE有两个node_zonelist，一个list里面包含系统中所有的zones
+// 另一个只包含本地节点的所有zones
+//  gfp_zonelist(flags) 用来决定使用哪一个zonelist
+//  当flags & __GFP_THISNODE时，使用1号zonelist也就是本地zonelist
+//  否则，使用0号，即包含全部zone的zonelist
 static inline struct zonelist *node_zonelist(int nid, gfp_t flags)
 {
 	return NODE_DATA(nid)->node_zonelists + gfp_zonelist(flags);
@@ -311,6 +316,7 @@ extern struct page *alloc_page_vma(gfp_t gfp_mask,
 #endif
 #define alloc_page(gfp_mask) alloc_pages(gfp_mask, 0)
 
+// 从伙伴系统获取内存
 extern unsigned long __get_free_pages(gfp_t gfp_mask, unsigned int order);
 extern unsigned long get_zeroed_page(gfp_t gfp_mask);
 

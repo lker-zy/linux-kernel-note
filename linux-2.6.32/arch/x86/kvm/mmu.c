@@ -160,11 +160,11 @@ struct kvm_rmap_desc {
 };
 
 struct kvm_shadow_walk_iterator {
-	u64 addr;
-	hpa_t shadow_addr;
-	int level;
-	u64 *sptep;
-	unsigned index;
+	u64 addr;	// 待映射的GUEST 物理地址
+	hpa_t shadow_addr;	// 本级页表基地址
+	int level;	// 页表级别
+	u64 *sptep;	// 指向下一级页表地址的指针
+	unsigned index;	// 在当前页表的索引
 };
 
 #define for_each_shadow_entry(_vcpu, _addr, _walker)    \
@@ -337,6 +337,7 @@ static void mmu_free_memory_cache_page(struct kvm_mmu_memory_cache *mc)
 		free_page((unsigned long)mc->objects[--mc->nobjs]);
 }
 
+// prealloc memory for page fault
 static int mmu_topup_memory_caches(struct kvm_vcpu *vcpu)
 {
 	int r;
@@ -474,6 +475,7 @@ static int host_mapping_level(struct kvm *kvm, gfn_t gfn)
 		return PT_PAGE_TABLE_LEVEL;
 
 	down_read(&current->mm->mmap_sem);
+	// 现分配?貌似并没有分配,只是检查了一下
 	vma = find_vma(current->mm, addr);
 	if (!vma)
 		goto out;
@@ -483,6 +485,9 @@ static int host_mapping_level(struct kvm *kvm, gfn_t gfn)
 out:
 	up_read(&current->mm->mmap_sem);
 
+	// 在干什么呢？
+	// 假设宿主机系统的PAGE_SIZE大于客户机的PAGE_SIZE
+	// 则要找到相匹配的哪个page level
 	for (i = PT_PAGE_TABLE_LEVEL;
 	     i < (PT_PAGE_TABLE_LEVEL + KVM_NR_PAGE_SIZES); ++i) {
 		if (page_size >= KVM_HPAGE_SIZE(i))
@@ -1392,7 +1397,7 @@ static void shadow_walk_init(struct kvm_shadow_walk_iterator *iterator,
 		iterator->shadow_addr
 			= vcpu->arch.mmu.pae_root[(addr >> 30) & 3];
 		iterator->shadow_addr &= PT64_BASE_ADDR_MASK;
-		--iterator->level;
+		--iterator->level;	// why ?
 		if (!iterator->shadow_addr)
 			iterator->level = 0;
 	}
@@ -1407,7 +1412,9 @@ static bool shadow_walk_okay(struct kvm_shadow_walk_iterator *iterator)
 		if (is_large_pte(*iterator->sptep))
 			return false;
 
+	// 下一级页表的index offset
 	iterator->index = SHADOW_PT_INDEX(iterator->addr, iterator->level);
+	// 下级页表的基地址
 	iterator->sptep	= ((u64 *)__va(iterator->shadow_addr)) + iterator->index;
 	return true;
 }
@@ -1889,6 +1896,7 @@ static void mmu_set_spte(struct kvm_vcpu *vcpu, u64 *sptep,
 		 __func__, *sptep, pt_access,
 		 write_fault, user_fault, gfn);
 
+	// 已经存在，更新之
 	if (is_rmap_spte(*sptep)) {
 		/*
 		 * If we overwrite a PTE page pointer with a 2MB PMD, unlink
@@ -1957,8 +1965,11 @@ static int __direct_map(struct kvm_vcpu *vcpu, gpa_t v, int write,
 	int pt_write = 0;
 	gfn_t pseudo_gfn;
 
+	// 遍历各级页表
 	for_each_shadow_entry(vcpu, (u64)gfn << PAGE_SHIFT, iterator) {
 		if (iterator.level == level) {
+			// iterator.sptep得到下级页表物理基地址
+			// 设置或者更新当前level的EPT页表项
 			mmu_set_spte(vcpu, iterator.sptep, ACC_ALL, ACC_ALL,
 				     0, write, 1, &pt_write,
 				     level, gfn, pfn, false, true);
@@ -1966,6 +1977,7 @@ static int __direct_map(struct kvm_vcpu *vcpu, gpa_t v, int write,
 			break;
 		}
 
+		// 当前页表项不存在
 		if (*iterator.sptep == shadow_trap_nonpresent_pte) {
 			pseudo_gfn = (iterator.addr & PT64_DIR_BASE_ADDR_MASK) >> PAGE_SHIFT;
 			sp = kvm_mmu_get_page(vcpu, pseudo_gfn, iterator.addr,
@@ -2219,6 +2231,7 @@ static int tdp_page_fault(struct kvm_vcpu *vcpu, gva_t gpa,
 
 	mmu_seq = vcpu->kvm->mmu_notifier_seq;
 	smp_rmb();
+	// 得到相应的宿主机页框
 	pfn = gfn_to_pfn(vcpu->kvm, gfn);
 	if (is_error_pfn(pfn)) {
 		kvm_release_pfn_clean(pfn);
@@ -2228,6 +2241,7 @@ static int tdp_page_fault(struct kvm_vcpu *vcpu, gva_t gpa,
 	if (mmu_notifier_retry(vcpu, mmu_seq))
 		goto out_unlock;
 	kvm_mmu_free_some_pages(vcpu);
+	// 建立EPT映射
 	r = __direct_map(vcpu, gpa, error_code & PFERR_WRITE_MASK,
 			 level, gfn, pfn);
 	spin_unlock(&vcpu->kvm->mmu_lock);
@@ -2361,6 +2375,7 @@ static int paging64_init_context_common(struct kvm_vcpu *vcpu, int level)
 {
 	struct kvm_mmu *context = &vcpu->arch.mmu;
 
+	// look up at arch/x86/kvm/paging_tmpl.h
 	ASSERT(is_pae(vcpu));
 	context->new_cr3 = paging_new_cr3;
 	context->page_fault = paging64_page_fault;
@@ -2419,6 +2434,7 @@ static int init_kvm_tdp_mmu(struct kvm_vcpu *vcpu)
 	context->root_hpa = INVALID_PAGE;
 
 	if (!is_paging(vcpu)) {
+		// 不分页，客户机线性地址直接作为客户机物理地址
 		context->gva_to_gpa = nonpaging_gva_to_gpa;
 		context->root_level = 0;
 	} else if (is_long_mode(vcpu)) {
