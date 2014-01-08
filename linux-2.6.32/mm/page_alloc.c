@@ -2799,6 +2799,7 @@ static int __build_all_zonelists(void *dummy)
 		pg_data_t *pgdat = NODE_DATA(nid);
 
 		build_zonelists(pgdat);
+		// TODO
 		build_zonelist_cache(pgdat);
 	}
 	return 0;
@@ -3490,6 +3491,7 @@ void __init free_bootmem_with_active_regions(int nid,
 		// 标记范围内的页面为可用(可分配)
 		// 核心是：mark_bootmem_node
 		//	主要是清除对应的位图标志bdata->node_bootmem_map
+		//	注意并不是struct page结构体里面的标志(页面属性)
 		free_bootmem_node(NODE_DATA(early_node_map[i].nid),
 				PFN_PHYS(early_node_map[i].start_pfn),
 				size_pages << PAGE_SHIFT);

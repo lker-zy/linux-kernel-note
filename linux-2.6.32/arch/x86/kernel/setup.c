@@ -613,6 +613,13 @@ void __init reserve_standard_io_resources(void)
 	 * 参考：陈莉君 的博客-驱动开发中的I/O地址空间
 	 */
 	for (i = 0; i < ARRAY_SIZE(standard_io_resources); i++)
+		// x86使用独立编址，所以使用io port的操作方式
+		//	更明确的说，是采用了io 端口的io映射方式而非内存映射方式
+		//
+		//	++++++++++++++++++++++++++++++++++++++++++++++++++++++
+		//	io 端口 与 io 内存相对
+		//	io 映射 与 内存映射(MMIO)相对
+		//	且： io映射与内存映射都是指的对io 端口的访问方式
 		request_resource(&ioport_resource, &standard_io_resources[i]);
 
 }
@@ -1074,9 +1081,10 @@ void __init setup_arch(char **cmdline_p)
 	e820_reserve_resources();
 	e820_mark_nosave_regions(max_low_pfn);
 
-	// 请求io地址空间映射资源
+	// 请求标准设备io地址空间映射资源
 	x86_init.resources.reserve_resources();
 
+	// TODO : related to MMIO
 	e820_setup_gap();
 
 #ifdef CONFIG_VT

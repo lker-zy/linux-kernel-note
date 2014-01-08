@@ -417,6 +417,7 @@ int __init acpi_scan_nodes(unsigned long start, unsigned long end)
 
 	for (i = 0; i < nr_cpu_ids; i++) {
 		// 获取cpu对应的内存访问节点, 这个最初在哪儿设置的呢
+		//		ACPI
 		int node = early_cpu_to_node(i);
 
 		if (node == NUMA_NO_NODE)

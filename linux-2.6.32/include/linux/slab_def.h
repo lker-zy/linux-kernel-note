@@ -30,16 +30,18 @@ struct kmem_cache {
 	unsigned int limit;
 	unsigned int shared;
 
-	unsigned int buffer_size;
-	u32 reciprocal_buffer_size;
+	unsigned int buffer_size;	// 对象单元size
+	u32 reciprocal_buffer_size;	// buffer_size的倒数
 /* 3) touched by every alloc & free from the backend */
 
 	unsigned int flags;		/* constant flags */
 	unsigned int num;		/* # of objs per slab */
+	// 这些slab存在于各个node的kmem_list3的各个链表中
+	// 每个slab可容纳num个缓存对象
 
 /* 4) cache_grow/shrink */
 	/* order of pgs per slab (2^n) */
-	unsigned int gfporder;
+	unsigned int gfporder;		// slab对象所拥有的内存页面数的order
 
 	/* force GFP flags, e.g. GFP_DMA */
 	gfp_t gfpflags;

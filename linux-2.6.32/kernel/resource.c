@@ -148,10 +148,13 @@ static struct resource * __request_resource(struct resource *root, struct resour
 	resource_size_t end = new->end;
 	struct resource *tmp, **p;
 
+	// invalid
 	if (end < start)
 		return root;
+	// 越界
 	if (start < root->start)
 		return root;
+	// 越界
 	if (end > root->end)
 		return root;
 	p = &root->child;
@@ -166,6 +169,7 @@ static struct resource * __request_resource(struct resource *root, struct resour
 		p = &tmp->sibling;
 		if (tmp->end < start)
 			continue;
+		// 已经申请过了
 		return tmp;
 	}
 }

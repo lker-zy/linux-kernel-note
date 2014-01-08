@@ -231,6 +231,7 @@ setup_node_bootmem(int nodeid, unsigned long start, unsigned long end)
 
 	memset(NODE_DATA(nodeid), 0, sizeof(pg_data_t));
 	// bootmem_node_data在哪儿分配和设置？
+	//		mm/bootmem.c : 35
 	NODE_DATA(nodeid)->bdata = &bootmem_node_data[nodeid];
 	NODE_DATA(nodeid)->node_start_pfn = start_pfn;
 	NODE_DATA(nodeid)->node_spanned_pages = last_pfn - start_pfn;
