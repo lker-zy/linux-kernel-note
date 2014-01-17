@@ -920,16 +920,25 @@ x86_decode_insn(struct x86_emulate_ctxt *ctxt, struct x86_emulate_ops *ops)
 	}
 
 	c->op_bytes = def_op_bytes;
+	// 操作地址大小
 	c->ad_bytes = def_ad_bytes;
 
 	/* Legacy prefixes. */
+	// 指令前缀处理
+	// 4类指令前缀：
+	//	1. 操作数大小改写
+	//	2. 操作地址大小改写
+	//	3. 段改写
+	//	4. 重复指令
 	for (;;) {
 		switch (c->b = insn_fetch(u8, 1, c->eip)) {
 		case 0x66:	/* operand-size override */
+			// 操作数大小改写指令   eg: AX -> AL/AH
 			/* switch between 2/4 bytes */
 			c->op_bytes = def_op_bytes ^ 6;
 			break;
 		case 0x67:	/* address-size override */
+			// 地址大小改写指令
 			if (mode == X86EMUL_MODE_PROT64)
 				/* switch between 4/8 bytes */
 				c->ad_bytes = def_ad_bytes ^ 12;
@@ -937,6 +946,7 @@ x86_decode_insn(struct x86_emulate_ctxt *ctxt, struct x86_emulate_ops *ops)
 				/* switch between 2/4 bytes */
 				c->ad_bytes = def_ad_bytes ^ 6;
 			break;
+		// 段改写指令
 		case 0x26:	/* ES override */
 		case 0x2e:	/* CS override */
 		case 0x36:	/* SS override */
@@ -947,11 +957,14 @@ x86_decode_insn(struct x86_emulate_ctxt *ctxt, struct x86_emulate_ops *ops)
 		case 0x65:	/* GS override */
 			set_seg_override(c, c->b & 7);
 			break;
+		// 应该是64位特有的吧 r系寄存器
 		case 0x40 ... 0x4f: /* REX */
 			if (mode != X86EMUL_MODE_PROT64)
+				// 但是系统不是64位模式，结束
 				goto done_prefixes;
 			c->rex_prefix = c->b;
 			continue;
+		// 重复指令
 		case 0xf0:	/* LOCK */
 			c->lock_prefix = 1;
 			break;
@@ -973,6 +986,7 @@ x86_decode_insn(struct x86_emulate_ctxt *ctxt, struct x86_emulate_ops *ops)
 done_prefixes:
 
 	/* REX prefix. */
+	// 64MODE
 	if (c->rex_prefix)
 		if (c->rex_prefix & 8)
 			c->op_bytes = 8;	/* REX.W */
@@ -981,6 +995,7 @@ done_prefixes:
 	c->d = opcode_table[c->b];
 	if (c->d == 0) {
 		/* Two-byte opcode? */
+		// 第二字节的opcode是由0x0f引导的
 		if (c->b == 0x0f) {
 			c->twobyte = 1;
 			c->b = insn_fetch(u8, 1, c->eip);
@@ -988,8 +1003,15 @@ done_prefixes:
 		}
 	}
 
+	// 具有Group属性
 	if (c->d & Group) {
 		group = c->d & GroupMask;
+		// http://blog.csdn.net/xfcyhuang/article/details/6232303
+		// 获取MODRM编码
+		// MODRM有三个字段：
+		//	1. MOD
+		//	2. REG
+		//	3. RM
 		c->modrm = insn_fetch(u8, 1, c->eip);
 		--c->eip;
 
@@ -1797,7 +1819,7 @@ x86_emulate_insn(struct x86_emulate_ctxt *ctxt, struct x86_emulate_ops *ops)
 
 	/* Privileged instruction can be executed only in CPL=0 */
 	if ((c->d & Priv) && kvm_x86_ops->get_cpl(ctxt->vcpu)) {
-		kvm_inject_gp(ctxt->vcpu, 0);
+		kvm_inject_gp(ctxt->vcpu, 0);	// inject 通用保护异常
 		goto done;
 	}
 

@@ -52,6 +52,7 @@ static inline void kvm_iodevice_init(struct kvm_io_device *dev,
 static inline int kvm_iodevice_read(struct kvm_io_device *dev,
 				    gpa_t addr, int l, void *v)
 {
+	// kvm_iodevice_init
 	return dev->ops->read ? dev->ops->read(dev, addr, l, v) : -EOPNOTSUPP;
 }
 

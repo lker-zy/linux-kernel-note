@@ -859,6 +859,7 @@ static void skip_emulated_instruction(struct kvm_vcpu *vcpu)
 	rip = kvm_rip_read(vcpu);
 	rip += vmcs_read32(VM_EXIT_INSTRUCTION_LEN);
 	kvm_rip_write(vcpu, rip);
+	// 跳过引起vmexit的这条指令
 
 	/* skipping an emulated instruction also counts */
 	vmx_set_interrupt_shadow(vcpu, 0);
@@ -2887,18 +2888,26 @@ static int handle_io(struct kvm_vcpu *vcpu, struct kvm_run *kvm_run)
 	++vcpu->stat.io_exits;
 	exit_qualification = vmcs_readl(EXIT_QUALIFICATION);
 	string = (exit_qualification & 16) != 0;
-
+	// 0 = not string
+	// 1 = string
 	if (string) {
 		if (emulate_instruction(vcpu,
 					kvm_run, 0, 0, 0) == EMULATE_DO_MMIO)
-			return 0;
+			return 0;	// 用户空间进行仿真
 		return 1;
 	}
 
 	size = (exit_qualification & 7) + 1;
+	// 0 = OUT
+	// 1 = IN
+	// IO方向
 	in = (exit_qualification & 8) != 0;
+	// 31:16 表示port number
 	port = exit_qualification >> 16;
 
+	// 跳过该指令，why?
+	// 跳过引起VM EXIT的指令，因为已经被仿真执行
+	// 所以不需要再重新执行否则又循环引起vmexit
 	skip_emulated_instruction(vcpu);
 	return kvm_emulate_pio(vcpu, kvm_run, in, size, port);
 }
@@ -4070,6 +4079,8 @@ static struct kvm_x86_ops vmx_x86_ops = {
 	.set_interrupt_shadow = vmx_set_interrupt_shadow,
 	.get_interrupt_shadow = vmx_get_interrupt_shadow,
 	.patch_hypercall = vmx_patch_hypercall,
+	// 将中断信息注入到VMCS结构
+	// 如果是v86 mode，还需要更新rip
 	.set_irq = vmx_inject_irq,
 	.set_nmi = vmx_inject_nmi,
 	.queue_exception = vmx_queue_exception,

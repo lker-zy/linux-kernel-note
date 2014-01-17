@@ -13,7 +13,7 @@
 #include <linux/module.h>
 #include <linux/highmem.h>
 #include <linux/sched.h>
-#include <linux/slab.h>
+#include <linux/slab.h>		// ^^ 
 #include <linux/spinlock.h>
 #include <linux/interrupt.h>
 #include <linux/proc_fs.h>

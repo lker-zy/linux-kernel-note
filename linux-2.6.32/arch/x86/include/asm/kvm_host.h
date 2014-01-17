@@ -61,6 +61,9 @@
 #define KVM_HPAGE_MASK(x)	(~(KVM_HPAGE_SIZE(x) - 1))
 #define KVM_PAGES_PER_HPAGE(x)	(KVM_HPAGE_SIZE(x) / PAGE_SIZE)
 
+// http://www.sandpile.org/x86/except.htm
+// http://wiki.osdev.org/Exceptions
+// 异常定义
 #define DE_VECTOR 0
 #define DB_VECTOR 1
 #define BP_VECTOR 3
@@ -244,7 +247,7 @@ struct kvm_pio_request {
 	int port;
 	int size;
 	int string;
-	int down;
+	int down;	// 目测是表示io操作的direction, up or down
 	int rep;
 };
 

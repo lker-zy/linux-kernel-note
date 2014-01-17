@@ -727,11 +727,13 @@ static inline struct kmem_cache *__find_general_cachep(size_t size,
 	while (size > csizep->cs_size)
 		csizep++;
 
+	/* ###################IMPORTANT###########################*/
 	/*
 	 * Really subtle: The last entry with cs->cs_size==ULONG_MAX
 	 * has cs_{dma,}cachep==NULL. Thus no special case
 	 * for large kmalloc calls required.
 	 */
+	/* ########################################################*/
 #ifdef CONFIG_ZONE_DMA
 	if (unlikely(gfpflags & GFP_DMA))
 		return csizep->cs_dmacachep;

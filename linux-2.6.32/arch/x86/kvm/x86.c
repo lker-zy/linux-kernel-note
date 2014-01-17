@@ -186,12 +186,16 @@ void kvm_inject_page_fault(struct kvm_vcpu *vcpu, unsigned long addr,
 {
 	++vcpu->stat.pf_guest;
 
+	// 已经在异常处理中
 	if (vcpu->arch.exception.pending) {
 		switch(vcpu->arch.exception.nr) {
-		case DF_VECTOR:
+		case DF_VECTOR:	// double fault
 			/* triple fault -> shutdown */
 			set_bit(KVM_REQ_TRIPLE_FAULT, &vcpu->requests);
 			return;
+		// 已在异常处理中，又发生了一个Page Fault，是致命错误
+		// 根据异常标准，会产生一个Double Fault
+		// http://wiki.osdev.org/Exceptions : Double Fault
 		case PF_VECTOR:
 			vcpu->arch.exception.nr = DF_VECTOR;
 			vcpu->arch.exception.error_code = 0;
@@ -204,7 +208,9 @@ void kvm_inject_page_fault(struct kvm_vcpu *vcpu, unsigned long addr,
 			break;
 		}
 	}
+	// 给出引起page fault的页面地址
 	vcpu->arch.cr2 = addr;
+	// 记录page fault异常，重新注入到客户机中
 	kvm_queue_exception_e(vcpu, PF_VECTOR, error_code);
 }
 
@@ -2948,6 +2954,7 @@ int emulate_instruction(struct kvm_vcpu *vcpu,
 	struct decode_cache *c;
 
 	kvm_clear_exception_queue(vcpu);
+	// cr2用于出现页异常时报告错误信息
 	vcpu->arch.mmio_fault_cr2 = cr2;
 	/*
 	 * TODO: fix emulate.c to use guest_read/write_register
@@ -2961,26 +2968,33 @@ int emulate_instruction(struct kvm_vcpu *vcpu,
 	vcpu->arch.pio.string = 0;
 
 	if (!(emulation_type & EMULTYPE_NO_DECODE)) {
+		// 第一次进入，需要解码
 		int cs_db, cs_l;
 		kvm_x86_ops->get_cs_db_l_bits(vcpu, &cs_db, &cs_l);
 
 		vcpu->arch.emulate_ctxt.vcpu = vcpu;
 		vcpu->arch.emulate_ctxt.eflags = kvm_x86_ops->get_rflags(vcpu);
 		vcpu->arch.emulate_ctxt.mode =
-			(!(vcpu->arch.cr0 & X86_CR0_PE)) ? X86EMUL_MODE_REAL :
+			(!(vcpu->arch.cr0 & X86_CR0_PE)) ? X86EMUL_MODE_REAL :	// 实模式/保护模式
 			(vcpu->arch.emulate_ctxt.eflags & X86_EFLAGS_VM)
-			? X86EMUL_MODE_VM86 : cs_l
+			? X86EMUL_MODE_VM86 : cs_l								// long mode
 			? X86EMUL_MODE_PROT64 :	cs_db
 			? X86EMUL_MODE_PROT32 : X86EMUL_MODE_PROT16;
 
+		// 指令解码: 指令前缀、操作码、源/目的操作数
+		// http://blog.csdn.net/xfcyhuang/article/details/6230542
 		r = x86_decode_insn(&vcpu->arch.emulate_ctxt, &emulate_ops);
+		// r == -1 , 不能被仿真
+		// r == 0  , 可以仿真
 
 		/* Only allow emulation of specific instructions on #UD
 		 * (namely VMMCALL, sysenter, sysexit, syscall)*/
 		c = &vcpu->arch.emulate_ctxt.decode;
+		// 处理undefined opcode异常
 		if (emulation_type & EMULTYPE_TRAP_UD) {
-			if (!c->twobyte)
+			if (!c->twobyte)	// 非2字节opcode
 				return EMULATE_FAIL;
+			// 特殊指令有效性验证
 			switch (c->b) {
 			case 0x01: /* VMMCALL */
 				if (c->modrm_mod != 3 || c->modrm_rm != 1)
@@ -3017,6 +3031,7 @@ int emulate_instruction(struct kvm_vcpu *vcpu,
 		return EMULATE_DONE;
 	}
 
+	// 模拟执行客户机的指令
 	r = x86_emulate_insn(&vcpu->arch.emulate_ctxt, &emulate_ops);
 	shadow_mask = vcpu->arch.emulate_ctxt.interruptibility;
 
@@ -3034,6 +3049,7 @@ int emulate_instruction(struct kvm_vcpu *vcpu,
 		run->mmio.is_write = vcpu->mmio_is_write;
 	}
 
+	// 模拟失败，返回用户空间进行仿真
 	if (r) {
 		if (kvm_mmu_unprotect_page_virt(vcpu, cr2))
 			return EMULATE_DONE;
@@ -3065,8 +3081,10 @@ static int pio_copy_data(struct kvm_vcpu *vcpu)
 
 	bytes = vcpu->arch.pio.size * vcpu->arch.pio.cur_count;
 	if (vcpu->arch.pio.in)
+		// copy_to_user, 写到客户机内存
 		ret = kvm_write_guest_virt(q, p, bytes, vcpu, &error_code);
 	else
+		// copy_from_user, 从客户机内存读取
 		ret = kvm_read_guest_virt(q, p, bytes, vcpu, &error_code);
 
 	if (ret == X86EMUL_PROPAGATE_FAULT)
@@ -3084,12 +3102,15 @@ int complete_pio(struct kvm_vcpu *vcpu)
 
 	if (!io->string) {
 		if (io->in) {
+			// 操作结果注入到客户机中
+			// 即将io read的值写入到客户机的rax寄存器
 			val = kvm_register_read(vcpu, VCPU_REGS_RAX);
 			memcpy(&val, vcpu->arch.pio_data, io->size);
 			kvm_register_write(vcpu, VCPU_REGS_RAX, val);
 		}
 	} else {
 		if (io->in) {
+			// 写入客户机内存
 			r = pio_copy_data(vcpu);
 			if (r)
 				goto out;
@@ -3102,10 +3123,12 @@ int complete_pio(struct kvm_vcpu *vcpu)
 			 * The size of the register should really depend on
 			 * current address size.
 			 */
+			// 操作客户机rcx寄存器，rcx用于判断rep操作是否结束的条件
 			val = kvm_register_read(vcpu, VCPU_REGS_RCX);
 			val -= delta;
 			kvm_register_write(vcpu, VCPU_REGS_RCX, val);
 		}
+		// io->down 表示io操作的方向
 		if (io->down)
 			delta = -delta;
 		delta *= io->size;
@@ -3137,6 +3160,7 @@ static int kernel_pio(struct kvm_vcpu *vcpu, void *pd)
 	else
 		r = kvm_io_bus_write(&vcpu->kvm->pio_bus, vcpu->arch.pio.port,
 				     vcpu->arch.pio.size, pd);
+	// return 0 means success
 	return r;
 }
 
@@ -3164,6 +3188,7 @@ int kvm_emulate_pio(struct kvm_vcpu *vcpu, struct kvm_run *run, int in,
 
 	trace_kvm_pio(!in, port, size, 1);
 
+	// 当qemu完成操作之后，重新进入kvm，会判断这个字段
 	vcpu->run->exit_reason = KVM_EXIT_IO;
 	vcpu->run->io.direction = in ? KVM_EXIT_IO_IN : KVM_EXIT_IO_OUT;
 	vcpu->run->io.size = vcpu->arch.pio.size = size;
@@ -3175,14 +3200,22 @@ int kvm_emulate_pio(struct kvm_vcpu *vcpu, struct kvm_run *run, int in,
 	vcpu->arch.pio.down = 0;
 	vcpu->arch.pio.rep = 0;
 
+	// io指令的操作数获取
 	val = kvm_register_read(vcpu, VCPU_REGS_RAX);
 	memcpy(vcpu->arch.pio_data, &val, 4);
 
+	// result 0 refer to success by lker_zy
 	if (!kernel_pio(vcpu, vcpu->arch.pio_data)) {
+		// 到这儿，说明数据已经准备好了
+		// 何谓准备好？
+		//	out： 假设coalesced_mmio，则数据已经写入到ring环里面
+		//	in : 数据已经从用户空间的仿真中读取完成
+		//
+		//	总之，运行到这儿，就等着将io操作结果注入到客户机中了
 		complete_pio(vcpu);
 		return 1;
 	}
-	return 0;
+	return 0;	// 需要用户空间进行仿真
 }
 EXPORT_SYMBOL_GPL(kvm_emulate_pio);
 
@@ -3211,9 +3244,9 @@ int kvm_emulate_pio_string(struct kvm_vcpu *vcpu, struct kvm_run *run, int in,
 		return 1;
 	}
 
-	if (!down)
+	if (!down)	// up
 		in_page = PAGE_SIZE - offset_in_page(address);
-	else
+	else		// down
 		in_page = offset_in_page(address) + size;
 	now = min(count, (unsigned long)in_page / size);
 	if (!now)
@@ -3236,9 +3269,12 @@ int kvm_emulate_pio_string(struct kvm_vcpu *vcpu, struct kvm_run *run, int in,
 
 	if (!vcpu->arch.pio.in) {
 		/* string PIO write */
+		// 从客户机内存读取需要写入到目标io地址的数据
 		ret = pio_copy_data(vcpu);
 		if (ret == X86EMUL_PROPAGATE_FAULT)
 			return 1;
+		// 将pio_copy_data获取的待写入数据，写入到目标地址
+		// 当然，可能是由用户空间的qemu进行模拟的
 		if (ret == 0 && !pio_string_write(vcpu)) {
 			complete_pio(vcpu);
 			if (vcpu->arch.pio.count == 0)
@@ -3259,6 +3295,8 @@ static void bounce_off(void *info)
 static unsigned int  ref_freq;
 static unsigned long tsc_khz_ref;
 
+// todo : cpufreq 通知链回调
+// 实现cpu调频处理
 static int kvmclock_cpufreq_notifier(struct notifier_block *nb, unsigned long val,
 				     void *data)
 {
@@ -3919,7 +3957,7 @@ static int __vcpu_run(struct kvm_vcpu *vcpu, struct kvm_run *kvm_run)
 						KVM_MP_STATE_RUNNABLE;
 				case KVM_MP_STATE_RUNNABLE:
 					break;
-				case KVM_MP_STATE_SIPI_RECEIVED:	// sigle step?
+				case KVM_MP_STATE_SIPI_RECEIVED:
 				default:
 					r = -EINTR;
 					break;
@@ -5203,7 +5241,7 @@ int kvm_arch_set_memory_region(struct kvm *kvm,
 	/*To keep backward compatibility with older userspace,
 	 *x86 needs to hanlde !user_alloc case.
 	 */
-	if (!user_alloc) {
+	if (!user_alloc) {	// 需要kernel进行mmap
 		if (npages && !old.rmap) {
 			unsigned long userspace_addr;
 

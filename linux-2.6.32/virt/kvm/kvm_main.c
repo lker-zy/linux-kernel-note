@@ -1680,9 +1680,11 @@ int kvm_write_guest_page(struct kvm *kvm, gfn_t gfn, const void *data,
 	int r;
 	unsigned long addr;
 
+	// gpa对应host的用户空间地址
 	addr = gfn_to_hva(kvm, gfn);
 	if (kvm_is_error_hva(addr))
 		return -EFAULT;
+	// addr是用户空间地址，不能直接写，调用copy_to_user
 	r = copy_to_user((void __user *)addr + offset, data, len);
 	if (r)
 		return -EFAULT;

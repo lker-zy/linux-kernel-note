@@ -132,6 +132,8 @@ static __always_inline void *kmalloc(size_t size, gfp_t flags)
 	struct kmem_cache *cachep;
 	void *ret;
 
+	// __builtin_constant_p是gcc内建函数
+	// 准确的定义应该是：如果size的值在编译时能确定，那么该函数返回值为1
 	if (__builtin_constant_p(size)) {
 		int i = 0;
 

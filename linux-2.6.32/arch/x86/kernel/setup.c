@@ -620,6 +620,7 @@ void __init reserve_standard_io_resources(void)
 		//	io 端口 与 io 内存相对
 		//	io 映射 与 内存映射(MMIO)相对
 		//	且： io映射与内存映射都是指的对io 端口的访问方式
+		//	++++++++++++++++++++++++++++++++++++++++++++++++++++++
 		request_resource(&ioport_resource, &standard_io_resources[i]);
 
 }
