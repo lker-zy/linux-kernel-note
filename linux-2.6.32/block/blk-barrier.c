@@ -88,6 +88,7 @@ unsigned blk_ordered_req_seq(struct request *rq)
 		return QUEUE_ORDSEQ_DONE;
 }
 
+// 完成某一个阶段
 bool blk_ordered_complete_seq(struct request_queue *q, unsigned seq, int error)
 {
 	struct request *rq;
@@ -98,6 +99,7 @@ bool blk_ordered_complete_seq(struct request_queue *q, unsigned seq, int error)
 	BUG_ON(q->ordseq & seq);
 	q->ordseq |= seq;
 
+    // 全阶段是否已经完成
 	if (blk_ordered_cur_seq(q) != QUEUE_ORDSEQ_DONE)
 		return false;
 
@@ -194,9 +196,11 @@ static inline bool start_ordered(struct request_queue *q, struct request **rqp)
 		queue_flush(q, QUEUE_ORDERED_DO_POSTFLUSH);
 		rq = &q->post_flush_rq;
 	} else
+        // 放弃post flush
 		skip |= QUEUE_ORDSEQ_POSTFLUSH;
 
 	if (q->ordered & QUEUE_ORDERED_DO_BAR) {
+        // 根据原始提交的barrier io request初始化q->bar_rq放到request queue
 		rq = &q->bar_rq;
 
 		/* initialize proxy request and queue it */
@@ -205,6 +209,7 @@ static inline bool start_ordered(struct request_queue *q, struct request **rqp)
 			rq->cmd_flags |= REQ_RW;
 		if (q->ordered & QUEUE_ORDERED_DO_FUA)
 			rq->cmd_flags |= REQ_FUA;
+        // 这是假设barrier request只包含一个bio么?
 		init_request_from_bio(rq, q->orig_bar_rq->bio);
 		rq->end_io = bar_end_io;
 
@@ -225,10 +230,15 @@ static inline bool start_ordered(struct request_queue *q, struct request **rqp)
 
 	*rqp = rq;
 
+    // 如上代码，一次将POST BAR PRE DRAIN请求插入队受，
+    // 则最后形成的队列是DRAIN PRE BAR POST的序列
+
 	/*
 	 * Complete skipped sequences.  If whole sequence is complete,
 	 * return false to tell elevator that this request is gone.
 	 */
+    // skip是blk_ordered_complete_seq的seq参数的实参变量
+    //  这里的意思是把skip掉的seq当作已完成的seq
 	return !blk_ordered_complete_seq(q, skip, 0);
 }
 
@@ -237,11 +247,14 @@ bool blk_do_ordered(struct request_queue *q, struct request **rqp)
 	struct request *rq = *rqp;
 	const int is_barrier = blk_fs_request(rq) && blk_barrier_rq(rq);
 
+    // 如果是普通request， ordseq应该是0
 	if (!q->ordseq) {
+        // 如果是普通request，直接返回给设备驱动
 		if (!is_barrier)
 			return true;
 
 		if (q->next_ordered != QUEUE_ORDERED_NONE)
+            // 如果全阶段已经完成，则返回0
 			return start_ordered(q, rqp);
 		else {
 			/*

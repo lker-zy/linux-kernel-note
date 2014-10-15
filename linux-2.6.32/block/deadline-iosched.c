@@ -31,7 +31,10 @@ struct deadline_data {
 	/*
 	 * requests (deadline_rq s) are present on both sort_list and fifo_list
 	 */
+    // 按照sector num组织的红黑树，分读写两个队列
 	struct rb_root sort_list[2];	
+    // 按请求提交的先后顺序组织的先进先出队列，实现deadline的核心队列
+    // ***其实是按照请求过期时间排序的fifo ***
 	struct list_head fifo_list[2];
 
 	/*
@@ -162,6 +165,7 @@ static void deadline_merged_request(struct request_queue *q,
 	 * if the merge was a front merge, we need to reposition request
 	 */
 	if (type == ELEVATOR_FRONT_MERGE) {
+        // deadline_rb_root根据读写请求类型找到对应的rb root
 		elv_rb_del(deadline_rb_root(dd, req), req);
 		deadline_add_rq_rb(dd, req);
 	}
@@ -270,6 +274,7 @@ static int deadline_dispatch_requests(struct request_queue *q, int force)
 	if (reads) {
 		BUG_ON(RB_EMPTY_ROOT(&dd->sort_list[READ]));
 
+        // 读多导致写被饥饿，惩罚之，放行写操作
 		if (writes && (dd->starved++ >= dd->writes_starved))
 			goto dispatch_writes;
 
@@ -440,9 +445,10 @@ static struct elv_fs_entry deadline_attrs[] = {
 
 static struct elevator_type iosched_deadline = {
 	.ops = {
-		.elevator_merge_fn = 		deadline_merge,
+		.elevator_merge_fn = 		deadline_merge, // 确认一个bio是否可以被merge
 		.elevator_merged_fn =		deadline_merged_request,
 		.elevator_merge_req_fn =	deadline_merged_requests,
+        // 将请求从调度队列移动到派发队列
 		.elevator_dispatch_fn =		deadline_dispatch_requests,
 		.elevator_add_req_fn =		deadline_add_request,
 		.elevator_queue_empty_fn =	deadline_queue_empty,

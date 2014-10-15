@@ -326,8 +326,10 @@ struct request_queue
 	/*
 	 * Together with queue_head for cacheline sharing
 	 */
+    // 派发队列
 	struct list_head	queue_head;
 	struct request		*last_merge;
+    // 调度队列
 	struct elevator_queue	*elevator;
 
 	/*
@@ -407,7 +409,9 @@ struct request_queue
 	struct blk_queue_tag	*queue_tags;
 	struct list_head	tag_busy_list;
 
+    // 调度队列中排队的请求数?
 	unsigned int		nr_sorted;
+    // 在途的请求
 	unsigned int		in_flight[2];
 
 	unsigned int		rq_timeout;

@@ -115,6 +115,9 @@ void blk_rq_timed_out_timer(unsigned long data)
 
 	list_for_each_entry_safe(rq, tmp, &q->timeout_list, timeout_list) {
 		if (time_after_eq(jiffies, rq->deadline)) {
+            // 将io request从timeout_list上摘除
+            // ? 啥时候链到timeout_list上去的呢
+            // blk_add_timer: 通过req->timeout_list挂接到rq->timeout_list
 			list_del_init(&rq->timeout_list);
 
 			/*
@@ -124,11 +127,16 @@ void blk_rq_timed_out_timer(unsigned long data)
 				continue;
 			blk_rq_timed_out(rq);
 		} else if (!next_set || time_after(next, rq->deadline)) {
+            // next > rq->deadline
+            // 意思是： 如果之前rq设置的next timer在当前rq->deadline之后
+            //          则，应该修正timer到当前rq的deadline，以免
+            //          当前rq超时未处理
 			next = rq->deadline;
 			next_set = 1;
 		}
 	}
 
+    // 重启timer
 	if (next_set)
 		mod_timer(&q->timeout, round_jiffies_up(next));
 

@@ -176,6 +176,7 @@ static void vp_reset(struct virtio_device *vdev)
 }
 
 /* the notify function used when creating a virt queue */
+// 通知相应virtqueue
 static void vp_notify(struct virtqueue *vq)
 {
 	struct virtio_pci_device *vp_dev = to_vp_device(vq->vdev);
@@ -362,7 +363,7 @@ static struct virtqueue *setup_vq(struct virtio_device *vdev, unsigned index,
 	struct virtio_pci_vq_info *info;
 	struct virtqueue *vq;
 	unsigned long flags, size;
-	u16 num;
+	u16 num;    // num代表什么?
 	int err;
 
 	/* Select the queue we're interested in */
@@ -370,7 +371,7 @@ static struct virtqueue *setup_vq(struct virtio_device *vdev, unsigned index,
 
 	/* Check if queue is either not available or already active. */
 	num = ioread16(vp_dev->ioaddr + VIRTIO_PCI_QUEUE_NUM);
-	if (!num || ioread32(vp_dev->ioaddr + VIRTIO_PCI_QUEUE_PFN))
+	if (!num || /*已被占用*/ioread32(vp_dev->ioaddr + VIRTIO_PCI_QUEUE_PFN))
 		return ERR_PTR(-ENOENT);
 
 	/* allocate and fill out our structure the represents an active

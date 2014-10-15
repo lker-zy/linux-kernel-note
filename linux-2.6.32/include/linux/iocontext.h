@@ -35,6 +35,7 @@ struct cfq_io_context {
 	void *key;
 	unsigned long dead_key;
 
+    // sync 和 async各一项
 	struct cfq_queue *cfqq[2];
 
 	struct io_context *ioc;

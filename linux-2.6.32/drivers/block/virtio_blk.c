@@ -41,6 +41,9 @@ struct virtblk_req
 	u8 status;
 };
 
+/*
+  ################### IMPORTANT ###############################
+ */
 static void blk_done(struct virtqueue *vq)
 {
 	struct virtio_blk *vblk = vq->vdev->priv;
@@ -174,10 +177,15 @@ static void do_virtblk_request(struct request_queue *q)
 			blk_stop_queue(q);
 			break;
 		}
+        /*
+         * 1. 从request queue卸载
+         * 2. 添加定时器, 加入timeout_list
+         */
 		blk_start_request(req);
 		issued++;
 	}
 
+    // kick to qemu
 	if (issued)
 		vblk->vq->vq_ops->kick(vblk->vq);
 }
@@ -293,6 +301,8 @@ static int __devinit virtblk_probe(struct virtio_device *vdev)
 		goto out_mempool;
 	}
 
+    // 初始化设备的请求队列，将do_virtblk_request注册为队列的request_fn回调
+    // do_virtblk_request在unplug的时候被触发
 	vblk->disk->queue = blk_init_queue(do_virtblk_request, &vblk->lock);
 	if (!vblk->disk->queue) {
 		err = -ENOMEM;

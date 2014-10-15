@@ -227,6 +227,7 @@ int ll_back_merge_fn(struct request_queue *q, struct request *req,
 {
 	unsigned short max_sectors;
 
+    // 决定最大合并尺寸
 	if (unlikely(blk_pc_request(req)))
 		max_sectors = queue_max_hw_sectors(q);
 	else

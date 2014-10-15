@@ -643,6 +643,7 @@ struct address_space {
 	 * of struct page's "mapping" pointer be used for PAGE_MAPPING_ANON.
 	 */
 
+// 每个设备/分区有一个block_device结构
 struct block_device {
 	dev_t			bd_dev;  /* not a kdev_t - it's a search key */
 	struct inode *		bd_inode;	/* will die */
@@ -655,13 +656,13 @@ struct block_device {
 #ifdef CONFIG_SYSFS
 	struct list_head	bd_holder_list;
 #endif
-	struct block_device *	bd_contains;
+	struct block_device *	bd_contains;    // 若是分区设备，指向设备本身
 	unsigned		bd_block_size;
 	struct hd_struct *	bd_part;
 	/* number of times partitions within this device have been opened. */
-	unsigned		bd_part_count;
+	unsigned		bd_part_count;  // 顾名思义
 	int			bd_invalidated;
-	struct gendisk *	bd_disk;
+	struct gendisk *	bd_disk;    // 属于同一个设备的分区共享
 	struct list_head	bd_list;
 	/*
 	 * Private data.  You must have bd_claim'ed the block_device

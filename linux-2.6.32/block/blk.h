@@ -58,10 +58,15 @@ static inline struct request *__elv_next_request(struct request_queue *q)
 	while (1) {
 		while (!list_empty(&q->queue_head)) {
 			rq = list_entry_rq(q->queue_head.next);
+            // 如果哦全阶段已经完成，则直接跳过了
+            // 否则:
+            //    普通请求交由设备驱动进行处理
+            //    barrier 请求进入barrier处理流程
 			if (blk_do_ordered(q, &rq))
 				return rq;
 		}
 
+        // 触发派发动作
 		if (test_bit(QUEUE_FLAG_DEAD, &q->queue_flags) ||
 		    !q->elevator->ops->elevator_dispatch_fn(q, 0))
 			return NULL;

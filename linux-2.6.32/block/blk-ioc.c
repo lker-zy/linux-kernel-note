@@ -37,6 +37,7 @@ int put_io_context(struct io_context *ioc)
 
 	BUG_ON(atomic_long_read(&ioc->refcount) == 0);
 
+    // sub后结果为0: return true
 	if (atomic_long_dec_and_test(&ioc->refcount)) {
 		rcu_read_lock();
 		if (ioc->aic && ioc->aic->dtor)

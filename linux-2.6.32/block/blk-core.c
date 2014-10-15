@@ -200,6 +200,7 @@ EXPORT_SYMBOL(blk_dump_rq_flags);
  * This is called with interrupts off and no requests on the queue and
  * with the queue lock held.
  */
+// 将队列挂起，暂时不交付request
 void blk_plug_device(struct request_queue *q)
 {
 	WARN_ON(!irqs_disabled());
@@ -257,11 +258,13 @@ EXPORT_SYMBOL(blk_remove_plug);
  */
 void __generic_unplug_device(struct request_queue *q)
 {
+    // 队列被设置STOP标志，无需unplug
 	if (unlikely(blk_queue_stopped(q)))
 		return;
 	if (!blk_remove_plug(q) && !blk_queue_nonrot(q))
 		return;
 
+    // 触发请求交付
 	q->request_fn(q);
 }
 
@@ -303,6 +306,7 @@ void blk_unplug_work(struct work_struct *work)
 	q->unplug_fn(q);
 }
 
+// unplug_timer的回调function
 void blk_unplug_timeout(unsigned long data)
 {
 	struct request_queue *q = (struct request_queue *)data;
@@ -358,6 +362,8 @@ EXPORT_SYMBOL(blk_start_queue);
  **/
 void blk_stop_queue(struct request_queue *q)
 {
+    // 将队列设置为PLUG，同时队列变为STOPPED， 队列中的request暂时被冻结
+    // 后续必须要blk_start_queue重启队列
 	blk_remove_plug(q);
 	queue_flag_set(QUEUE_FLAG_STOPPED, q);
 }
@@ -412,6 +418,7 @@ void __blk_run_queue(struct request_queue *q)
 		q->request_fn(q);
 		queue_flag_clear(QUEUE_FLAG_REENTER, q);
 	} else {
+        // 先将队列plug，然后设置定时任务进行unplug?
 		queue_flag_set(QUEUE_FLAG_PLUGGED, q);
 		kblockd_schedule_work(q, &q->unplug_work);
 	}
@@ -511,9 +518,20 @@ struct request_queue *blk_alloc_queue_node(gfp_t gfp_mask, int node_id)
 		return NULL;
 	}
 
+    // unplug_timer的timer function在blk_init_queue_node里面进行设置
+	// 具体来说是在blk_queue_make_request(q, __make_request);里面
 	init_timer(&q->unplug_timer);
+    // timeout timer
 	setup_timer(&q->timeout, blk_rq_timed_out_timer, (unsigned long) q);
 	INIT_LIST_HEAD(&q->timeout_list);
+    // 初始化unplug_work, 设置blk_unplug_work为执行动作
+    // unplug_work后续会被加入到工作队列
+    //
+    // 具体来说就是：
+    //  0. unplug_timer定时器触发， 执行定时器回调，即 操作步骤1
+    //  1. unplug_work被加入工作队列
+    //  2. blk_unplug_work被调用执行
+    //  3. blk_unplug_work执行q->unplug_fn
 	INIT_WORK(&q->unplug_work, blk_unplug_work);
 
 	kobject_init(&q->kobj, &blk_queue_ktype);
@@ -594,11 +612,15 @@ blk_init_queue_node(request_fn_proc *rfn, spinlock_t *lock, int node_id)
 	/*
 	 * all done
 	 */
+    // 选择IO调度器算法
+    // 分配调度器队列
+    // 初始化调度器
 	if (!elevator_init(q, NULL)) {
 		blk_queue_congestion_threshold(q);
 		return q;
 	}
 
+    // kobject 操作
 	blk_put_queue(q);
 	return NULL;
 }
@@ -828,9 +850,12 @@ static struct request *get_request_wait(struct request_queue *q, int rw_flags,
 	const bool is_sync = rw_is_sync(rw_flags) != 0;
 	struct request *rq;
 
+    // pick一个空闲的request
 	rq = get_request(q, rw_flags, bio, GFP_NOIO);
 	while (!rq) {
-		DEFINE_WAIT(wait);
+        // 如果找不到合适的request，则等待kblockd内核线程执行完unplug操作
+        // 有可能会触发队列的派发动作，执行底层io，已获得可用request
+		DEFINE_WAIT(wait);  // 定义等待队列
 		struct io_context *ioc;
 		struct request_list *rl = &q->rq;
 
@@ -1183,6 +1208,7 @@ static int __make_request(struct request_queue *q, struct bio *bio)
 	if (unlikely(bio_rw_flagged(bio, BIO_RW_BARRIER)) || elv_queue_empty(q))
 		goto get_rq;
 
+    // 寻找一个已有的且可以合并的request，将bio并入其中
 	el_ret = elv_merge(q, &req, bio);
 	switch (el_ret) {
 	case ELEVATOR_BACK_MERGE:
@@ -1203,10 +1229,13 @@ static int __make_request(struct request_queue *q, struct bio *bio)
 		if (!blk_rq_cpu_valid(req))
 			req->cpu = bio->bi_comp_cpu;
 		drive_stat_acct(req, 0);
+        // 调用elevator的.elevator_merge_req_fn
 		if (!attempt_back_merge(q, req))
+            // 调用elevator的.elevator_merged_fn
 			elv_merged_request(q, req, el_ret);
 		goto out;
 
+    // deadline 只有这一种结果, FONT_MERGE
 	case ELEVATOR_FRONT_MERGE:
 		BUG_ON(!rq_mergeable(req));
 
@@ -1227,8 +1256,7 @@ static int __make_request(struct request_queue *q, struct bio *bio)
 		/*
 		 * may not be valid. if the low level driver said
 		 * it didn't need a bounce buffer then it better
-		 * not touch req->buffer either...
-		 */
+		 * not touch req->buffer either...  */
 		req->buffer = bio_data(bio);
 		req->__sector = bio->bi_sector;
 		req->__data_len += bytes;
@@ -1237,6 +1265,7 @@ static int __make_request(struct request_queue *q, struct bio *bio)
 			req->cpu = bio->bi_comp_cpu;
 		drive_stat_acct(req, 0);
 		if (!attempt_front_merge(q, req))
+            // 调用elevator的.elevator_merged_fn
 			elv_merged_request(q, req, el_ret);
 		goto out;
 
@@ -1251,7 +1280,7 @@ get_rq:
 	 * but we need to set it earlier to expose the sync flag to the
 	 * rq allocator and io schedulers.
 	 */
-	rw_flags = bio_data_dir(bio);
+	rw_flags = bio_data_dir(bio);   // 1: WRITE 0: READ
 	if (sync)
 		rw_flags |= REQ_RW_SYNC;
 
@@ -1275,6 +1304,8 @@ get_rq:
 		req->cpu = blk_cpu_to_group(smp_processor_id());
 	if (queue_should_plug(q) && elv_queue_empty(q))
 		blk_plug_device(q);
+    // 调用到elv_merge的时候，request会执行elv_rqhash_add将request插入
+    // 以供后续的merge操作
 	add_request(q, req);
 out:
 	if (unplug || !queue_should_plug(q))
@@ -1406,6 +1437,12 @@ static inline int bio_check_eod(struct bio *bio, unsigned int nr_sectors)
  * bi_sector for remaps as it sees fit.  So the values of these fields
  * should NOT be depended on after the call to generic_make_request.
  */
+/*
+ * 干这么几件事儿：
+ *  1. 参数检查
+ *  2. 根据分区表重定位请求offset
+ *  3. 调用设备请求队列对应的make_request_fn
+ */
 static inline void __generic_make_request(struct bio *bio)
 {
 	struct request_queue *q;
@@ -1484,6 +1521,7 @@ static inline void __generic_make_request(struct bio *bio)
 		trace_block_bio_queue(q, bio);
 
 		ret = q->make_request_fn(q, bio);
+        // 至死方休?
 	} while (ret);
 
 	return;
@@ -1505,6 +1543,7 @@ end_io:
  */
 void generic_make_request(struct bio *bio)
 {
+    // 处于递归i调用中
 	if (current->bio_tail) {
 		/* make_request is active */
 		*(current->bio_tail) = bio;
@@ -1554,6 +1593,7 @@ EXPORT_SYMBOL(generic_make_request);
  * interfaces; @bio must be presetup and ready for I/O.
  *
  */
+// io 请求进入 block io layer的入口
 void submit_bio(int rw, struct bio *bio)
 {
 	int count = bio_sectors(bio);
@@ -1766,6 +1806,7 @@ static void blk_account_io_done(struct request *req)
  * Context:
  *     queue_lock must be held.
  */
+// block io layer衔接底层驱动的入口
 struct request *blk_peek_request(struct request_queue *q)
 {
 	struct request *rq;
@@ -2177,6 +2218,7 @@ static bool __blk_end_bidi_request(struct request *rq, int error,
 	if (blk_update_bidi_request(rq, error, nr_bytes, bidi_bytes))
 		return true;
 
+    // 所有数据都已经传输完成
 	blk_finish_request(rq, error);
 
 	return false;
@@ -2484,6 +2526,7 @@ free_and_out:
 }
 EXPORT_SYMBOL_GPL(blk_rq_prep_clone);
 
+// 向kblockd_workqueue工作队列添加一个任务
 int kblockd_schedule_work(struct request_queue *q, struct work_struct *work)
 {
 	return queue_work(kblockd_workqueue, work);
@@ -2495,6 +2538,7 @@ int __init blk_dev_init(void)
 	BUILD_BUG_ON(__REQ_NR_BITS > 8 *
 			sizeof(((struct request *)0)->cmd_flags));
 
+    // 创建per-cpu的kblockd工作队列(内核线程kblockd/x)
 	kblockd_workqueue = create_workqueue("kblockd");
 	if (!kblockd_workqueue)
 		panic("Failed to create kblockd\n");

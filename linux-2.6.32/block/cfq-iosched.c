@@ -147,6 +147,7 @@ struct cfq_data {
 	 */
 	struct rb_root prio_trees[CFQ_PRIO_LISTS];
 
+    // 等待调度的队列数目
 	unsigned int busy_queues;
 
 	int rq_in_driver[2];
@@ -166,6 +167,7 @@ struct cfq_data {
 	struct timer_list idle_slice_timer;
 	struct work_struct unplug_work;
 
+    // 当前运行的队列
 	struct cfq_queue *active_queue;
 	struct cfq_io_context *active_cic;
 
@@ -327,6 +329,7 @@ cfq_set_prio_slice(struct cfq_data *cfqd, struct cfq_queue *cfqq)
  * isn't valid until the first request from the dispatch is activated
  * and the slice time set.
  */
+// 检查相应队列的时间片是否用完
 static inline bool cfq_slice_used(struct cfq_queue *cfqq)
 {
 	if (cfq_cfqq_slice_new(cfqq))
@@ -654,7 +657,9 @@ static void cfq_resort_rr_list(struct cfq_data *cfqd, struct cfq_queue *cfqq)
 	 * Resorting requires the cfqq to be on the RR list already.
 	 */
 	if (cfq_cfqq_on_rr(cfqq)) {
+        // 将cfqq队列加入到service_tree
 		cfq_service_tree_add(cfqd, cfqq, 0);
+        // add to prio tree
 		cfq_prio_tree_add(cfqd, cfqq);
 	}
 }
@@ -727,6 +732,7 @@ static void cfq_add_rq_rb(struct request *rq)
 	while ((__alias = elv_rb_add(&cfqq->sort_list, rq)) != NULL)
 		cfq_dispatch_insert(cfqd->queue, __alias);
 
+    // 一个新的队列，将队列放入service tree和prio tree
 	if (!cfq_cfqq_on_rr(cfqq))
 		cfq_add_cfqq_rr(cfqd, cfqq);
 
@@ -739,6 +745,7 @@ static void cfq_add_rq_rb(struct request *rq)
 	/*
 	 * adjust priority tree position, if ->next_rq changes
 	 */
+    // 挑选了新的next_rq
 	if (prev != cfqq->next_rq)
 		cfq_prio_tree_add(cfqd, cfqq);
 
@@ -763,6 +770,8 @@ cfq_find_rq_fmerge(struct cfq_data *cfqd, struct bio *bio)
 	if (!cic)
 		return NULL;
 
+    // cfg_bio_sync判别一个bio是否“应当”被视为SYNC请求
+    //     注意： read请求被当作sync请求来看待
 	cfqq = cic_to_cfqq(cic, cfq_bio_sync(bio));
 	if (cfqq) {
 		sector_t sector = bio->bi_sector + bio_sectors(bio);
@@ -907,16 +916,18 @@ __cfq_slice_expired(struct cfq_data *cfqd, struct cfq_queue *cfqq,
 {
 	cfq_log_cfqq(cfqd, cfqq, "slice expired t=%d", timed_out);
 
+    // too idle
 	if (cfq_cfqq_wait_request(cfqq))
 		del_timer(&cfqd->idle_slice_timer);
 
+    // 清楚wait request标志
 	cfq_clear_cfqq_wait_request(cfqq);
 
 	/*
 	 * store what was left of this slice, if the queue idled/timed out
 	 */
 	if (timed_out && !cfq_cfqq_slice_new(cfqq)) {
-		cfqq->slice_resid = cfqq->slice_end - jiffies;
+		cfqq->slice_resid = cfqq->slice_end - jiffies;  // 剩余的时间片
 		cfq_log_cfqq(cfqd, cfqq, "resid=%ld", cfqq->slice_resid);
 	}
 
@@ -958,7 +969,7 @@ static struct cfq_queue *cfq_set_active_queue(struct cfq_data *cfqd,
 					      struct cfq_queue *cfqq)
 {
 	if (!cfqq)
-		cfqq = cfq_get_next_queue(cfqd);
+		cfqq = cfq_get_next_queue(cfqd);    // 没有合适队列，从service_tree中寻找时间点最临近的队列
 
 	__cfq_set_active_queue(cfqd, cfqq);
 	return cfqq;
@@ -1266,6 +1277,8 @@ static struct cfq_queue *cfq_select_queue(struct cfq_data *cfqd)
 	 * cooperators and put the close queue at the front of the service
 	 * tree.  If possible, merge the expiring queue with the new cfqq.
 	 */
+    // 当前active_queue中已经没有请求了
+    // 需要重新寻找合适的queue
 	new_cfqq = cfq_close_cooperator(cfqd, cfqq);
 	if (new_cfqq) {
 		if (!cfqq->new_cfqq)
@@ -1278,6 +1291,7 @@ static struct cfq_queue *cfq_select_queue(struct cfq_data *cfqd)
 	 * flight or is idling for a new request, allow either of these
 	 * conditions to happen (or time out) before selecting a new queue.
 	 */
+    // 到这儿表示没有找到合适的替代队列, 不执行实际动作，返回NULL
 	if (timer_pending(&cfqd->idle_slice_timer) ||
 	    (cfqq->dispatched && cfq_cfqq_idle_window(cfqq))) {
 		cfqq = NULL;
@@ -1317,6 +1331,7 @@ static int cfq_forced_dispatch(struct cfq_data *cfqd)
 	while ((cfqq = cfq_rb_first(&cfqd->service_tree)) != NULL)
 		dispatched += __cfq_forced_dispatch_cfqq(cfqq);
 
+    // 将当前cfqq设置为过期
 	cfq_slice_expired(cfqd, 0);
 
 	BUG_ON(cfqd->busy_queues);
@@ -1361,6 +1376,10 @@ static bool cfq_may_dispatch(struct cfq_data *cfqd, struct cfq_queue *cfqq)
 		if (cfqd->busy_queues > 1)
 			return false;
 
+        // 到这儿，表示：
+        //      1. 不是idle队列
+        //      2. 系统中只有一个busy_queues
+        //  也就是说。 本队列是系统中唯一等待的队列,so，可以放宽队列限制
 		/*
 		 * Sole queue user, allow bigger slice
 		 */
@@ -1372,6 +1391,7 @@ static bool cfq_may_dispatch(struct cfq_data *cfqd, struct cfq_queue *cfqq)
 	 * We also ramp up the dispatch depth gradually for async IO,
 	 * based on the last sync IO we serviced
 	 */
+    // 异步请求的队列调整
 	if (!cfq_cfqq_sync(cfqq) && cfqd->cfq_latency) {
 		unsigned long last_sync = jiffies - cfqd->last_end_sync_rq;
 		unsigned int depth;
@@ -1406,12 +1426,13 @@ static bool cfq_dispatch_request(struct cfq_data *cfqd, struct cfq_queue *cfqq)
 	 * follow expired path, else get first next available
 	 */
 	rq = cfq_check_fifo(cfqq);
-	if (!rq)
+	if (!rq)    // 没有过期请求，直接去cfqq->next_rq
 		rq = cfqq->next_rq;
 
 	/*
 	 * insert request into driver dispatch list
 	 */
+    // 将请求插入到设备的请求队列/派发队列
 	cfq_dispatch_insert(cfqd->queue, rq);
 
 	if (!cfqd->active_cic) {
@@ -1458,7 +1479,7 @@ static int cfq_dispatch_requests(struct request_queue *q, int force)
 	 */
 	if (cfqd->busy_queues > 1 && ((!cfq_cfqq_sync(cfqq) &&
 	    cfqq->slice_dispatch >= cfq_prio_to_maxrq(cfqd, cfqq)) ||
-	    cfq_class_idle(cfqq))) {
+	    cfq_class_idle(cfqq))) {    // idle queue总是在dispatch一次后过期
 		cfqq->slice_end = jiffies + 1;
 		cfq_slice_expired(cfqd, 0);
 	}
@@ -2143,12 +2164,15 @@ cfq_should_preempt(struct cfq_data *cfqd, struct cfq_queue *new_cfqq,
 	if (!cfqq)
 		return false;
 
+    // 当前队列过期，抢占
 	if (cfq_slice_used(cfqq))
 		return true;
 
+    // 新队列是idle队列，禁止抢占
 	if (cfq_class_idle(new_cfqq))
 		return false;
 
+    // 当前队列是idle 队列，抢占之
 	if (cfq_class_idle(cfqq))
 		return true;
 
@@ -2156,6 +2180,7 @@ cfq_should_preempt(struct cfq_data *cfqd, struct cfq_queue *new_cfqq,
 	 * if the new request is sync, but the currently running queue is
 	 * not, let the sync request have priority.
 	 */
+    // 同步请求导致异步队列被抢占
 	if (rq_is_sync(rq) && !cfq_cfqq_sync(cfqq))
 		return true;
 
@@ -2169,6 +2194,7 @@ cfq_should_preempt(struct cfq_data *cfqd, struct cfq_queue *new_cfqq,
 	/*
 	 * Allow an RT request to pre-empt an ongoing non-RT cfqq timeslice.
 	 */
+    // 实时队列抢占非实时队列
 	if (cfq_class_rt(new_cfqq) && !cfq_class_rt(cfqq))
 		return true;
 
@@ -2226,6 +2252,7 @@ cfq_rq_enqueued(struct cfq_data *cfqd, struct cfq_queue *cfqq,
 
 	cfqq->last_request_pos = blk_rq_pos(rq) + blk_rq_sectors(rq);
 
+    // 当前队列是活动队列
 	if (cfqq == cfqd->active_queue) {
 		/*
 		 * Remember that we saw a request from this process, but
@@ -2257,6 +2284,7 @@ cfq_rq_enqueued(struct cfq_data *cfqd, struct cfq_queue *cfqq,
 	}
 }
 
+// 请求进入调度队列
 static void cfq_insert_request(struct request_queue *q, struct request *rq)
 {
 	struct cfq_data *cfqd = q->elevator->elevator_data;
@@ -2267,6 +2295,7 @@ static void cfq_insert_request(struct request_queue *q, struct request *rq)
 
 	cfq_add_rq_rb(rq);
 
+    // 设置过期时间，调度器会优先调度队列上fifo中过期的请求，否则会调度cfqq_>next_rq
 	rq_set_fifo_time(rq, jiffies + cfqd->cfq_fifo_expire[rq_is_sync(rq)]);
 	list_add_tail(&rq->queuelist, &cfqq->fifo);
 

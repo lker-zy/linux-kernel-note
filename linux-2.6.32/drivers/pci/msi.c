@@ -47,6 +47,7 @@ int arch_setup_msi_irqs(struct pci_dev *dev, int nvec, int type)
 		return 1;
 
 	list_for_each_entry(entry, &dev->msi_list, list) {
+        // for x86: arch/x86/kernel/apic/io_apic.c
 		ret = arch_setup_msi_irq(dev, entry);
 		if (ret < 0)
 			return ret;
@@ -568,7 +569,7 @@ static int msix_capability_init(struct pci_dev *dev,
 	msix_program_entries(dev, entries);
 
 	/* Set MSI-X enabled bits and unmask the function */
-	pci_intx_for_msi(dev, 0);
+	pci_intx_for_msi(dev, 0);   // 禁用传统中断
 	dev->msix_enabled = 1;
 
 	control &= ~PCI_MSIX_FLAGS_MASKALL;
@@ -793,6 +794,7 @@ int pci_enable_msix(struct pci_dev *dev, struct msix_entry *entries, int nvec)
 		       "(MSI IRQ already assigned)\n");
 		return -EINVAL;
 	}
+    // 配置设备的MSI结构，分配MSI中断号
 	status = msix_capability_init(dev, entries, nvec);
 	return status;
 }

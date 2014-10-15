@@ -367,7 +367,7 @@ struct virtqueue *vring_new_virtqueue(unsigned int num,
 				      struct virtio_device *vdev,
 				      void *pages,
 				      void (*notify)(struct virtqueue *),
-				      void (*callback)(struct virtqueue *),
+				      void (*callba/ck)(struct virtqueue *),
 				      const char *name)
 {
 	struct vring_virtqueue *vq;

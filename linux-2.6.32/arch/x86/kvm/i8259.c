@@ -136,7 +136,7 @@ static void pic_update_irq(struct kvm_pic *s)
 		/*
 		 * if irq request by slave pic, signal master PIC
 		 */
-		pic_set_irq1(&s->pics[0], 2, 1);
+		pic_set_irq1(&s->pics[0], 2, 1);    // 2 是级联引脚?
 		pic_set_irq1(&s->pics[0], 2, 0);
 	}
 	irq = pic_get_irq(&s->pics[0]);
@@ -160,6 +160,9 @@ int kvm_pic_set_irq(void *opaque, int irq, int level)
 
 	spin_lock(&s->lock);
 	if (irq >= 0 && irq < PIC_NUM_PINS) {
+        /*
+            kvm_pic.pics代表了8259的两个级联芯片
+         */
 		ret = pic_set_irq1(&s->pics[irq >> 3], irq & 7, level);
 		pic_update_irq(s);
 		trace_kvm_pic_set_irq(irq >> 3, irq & 7, s->pics[irq >> 3].elcr,

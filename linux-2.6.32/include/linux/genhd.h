@@ -152,7 +152,7 @@ struct gendisk {
 	struct hd_struct part0;
 
 	const struct block_device_operations *fops;
-	struct request_queue *queue;
+	struct request_queue *queue;    // IMPORTANT， 设备的请求队列
 	void *private_data;
 
 	int flags;

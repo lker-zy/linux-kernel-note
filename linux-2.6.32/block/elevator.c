@@ -148,8 +148,10 @@ static struct elevator_type *elevator_get(const char *name)
 
 	spin_lock(&elv_list_lock);
 
+    // 根据调度器名字找到调度器type
 	e = elevator_find(name);
 	if (!e) {
+        // 调度器模块名字
 		char elv[ELV_NAME_MAX + strlen("-iosched")];
 
 		spin_unlock(&elv_list_lock);
@@ -269,6 +271,7 @@ int elevator_init(struct request_queue *q, char *name)
 							chosen_elevator);
 	}
 
+    // 寻找默认配置的调度器
 	if (!e) {
 		e = elevator_get(CONFIG_DEFAULT_IOSCHED);
 		if (!e) {
@@ -279,10 +282,14 @@ int elevator_init(struct request_queue *q, char *name)
 		}
 	}
 
+    // 分配调度器队列
+    // 初始化队列操作方法
+    // 初始化队列的hash表
 	eq = elevator_alloc(q, e);
 	if (!eq)
 		return -ENOMEM;
 
+    // 调用具体调度其的elevator_init_fn回调
 	data = elevator_init_queue(q, eq);
 	if (!data) {
 		kobject_put(&eq->kobj);
@@ -341,11 +348,14 @@ static struct request *elv_rqhash_find(struct request_queue *q, sector_t offset)
 	hlist_for_each_entry_safe(rq, entry, next, hash_list, hash) {
 		BUG_ON(!ELV_ON_HASH(rq));
 
+        // 主要是检查一些merge相关的标志位，并非是检查rq是否可以merge
 		if (unlikely(!rq_mergeable(rq))) {
 			__elv_rqhash_del(rq);
 			continue;
 		}
 
+        // rq_hash_key等于start sector + sectors num
+        // 也就是请求结束的sector值 
 		if (rq_hash_key(rq) == offset)
 			return rq;
 	}
@@ -496,12 +506,15 @@ int elv_merge(struct request_queue *q, struct request **req, struct bio *bio)
 	/*
 	 * See if our hash lookup can find a potential backmerge.
 	 */
+    // 通过hash查找，找到一个request， 满足如下要求：
+    // request的end sector num 等于 要提交的bio的start sector num
 	__rq = elv_rqhash_find(q, bio->bi_sector);
 	if (__rq && elv_rq_merge_ok(__rq, bio)) {
 		*req = __rq;
 		return ELEVATOR_BACK_MERGE;
 	}
 
+    // 判断是否可以merge的电梯算法回调function
 	if (e->ops->elevator_merge_fn)
 		return e->ops->elevator_merge_fn(q, req, bio);
 
@@ -515,6 +528,8 @@ void elv_merged_request(struct request_queue *q, struct request *rq, int type)
 	if (e->ops->elevator_merged_fn)
 		e->ops->elevator_merged_fn(q, rq, type);
 
+    // hash的key是end sector num
+    // merge以后hash key有变化，所以需要rehash
 	if (type == ELEVATOR_BACK_MERGE)
 		elv_rqhash_reposition(q, rq);
 
@@ -556,11 +571,14 @@ void elv_requeue_request(struct request_queue *q, struct request *rq)
 void elv_drain_elevator(struct request_queue *q)
 {
 	static int printed;
+    // 请求从调度队列移动到派发队列
+    //      elv_dispatch_add_tail
 	while (q->elevator->ops->elevator_dispatch_fn(q, 1))
 		;
 	if (q->nr_sorted == 0)
 		return;
-	if (printed++ < 10) {
+	if (printed++ < 10) {   // 防止过多的内核消息打印
+        // 报告dispatch问题
 		printk(KERN_ERR "%s: forced dispatching is broken "
 		       "(nr_sorted=%u), please report this\n",
 		       q->elevator->elevator_type->elevator_name, q->nr_sorted);
@@ -612,8 +630,10 @@ void elv_insert(struct request_queue *q, struct request *rq, int where)
 		list_add(&rq->queuelist, &q->queue_head);
 		break;
 
+    // barrier io会从这个case进行请求插入
 	case ELEVATOR_INSERT_BACK:
 		rq->cmd_flags |= REQ_SOFTBARRIER;
+        // 强制将调度队列中已有的所有请求派发到派发队列
 		elv_drain_elevator(q);
 		list_add_tail(&rq->queuelist, &q->queue_head);
 		/*
@@ -629,6 +649,7 @@ void elv_insert(struct request_queue *q, struct request *rq, int where)
 		__blk_run_queue(q);
 		break;
 
+    // 正常的插入逻辑
 	case ELEVATOR_INSERT_SORT:
 		BUG_ON(!blk_fs_request(rq) && !blk_discard_rq(rq));
 		rq->cmd_flags |= REQ_SORTED;
@@ -647,6 +668,8 @@ void elv_insert(struct request_queue *q, struct request *rq, int where)
 		q->elevator->ops->elevator_add_req_fn(q, rq);
 		break;
 
+    // 一般在错误处理逻辑由此进行插入
+    // IO出错后，执行REQUEUE
 	case ELEVATOR_INSERT_REQUEUE:
 		/*
 		 * If ordered flush isn't in progress, we do front
@@ -668,6 +691,7 @@ void elv_insert(struct request_queue *q, struct request *rq, int where)
 
 		ordseq = blk_ordered_req_seq(rq);
 
+        // 确定请求重新插入的位置
 		list_for_each(pos, &q->queue_head) {
 			struct request *pos_rq = list_entry_rq(pos);
 			if (ordseq <= blk_ordered_req_seq(pos_rq))
@@ -684,6 +708,9 @@ void elv_insert(struct request_queue *q, struct request *rq, int where)
 	}
 
 	if (unplug_it && blk_queue_plugged(q)) {
+        // nrq 是可派发的request个数上限
+        // 总阈值 减去 in-flight的数值
+        // in-flight由在途的读写总和构成
 		int nrq = q->rq.count[BLK_RW_SYNC] + q->rq.count[BLK_RW_ASYNC]
 				- queue_in_flight(q);
 
@@ -702,12 +729,16 @@ void __elv_add_request(struct request_queue *q, struct request *rq, int where,
 		/*
 		 * toggle ordered color
 		 */
+        // 标识紧邻的两个barrier io，其ordcolor不一样
 		if (blk_barrier_rq(rq))
 			q->ordcolor ^= 1;
 
 		/*
 		 * barriers implicitly indicate back insertion
 		 */
+        // 如果是barrier io， 则强制将其插入到请求队列的最后
+        // 通过在elv_insert的时候将调度队列中的请求全部发送到派发队列
+        // 然后将该barrier io放到派发队列，保证了barrier io之前的request全部得到处理
 		if (where == ELEVATOR_INSERT_SORT)
 			where = ELEVATOR_INSERT_BACK;
 
